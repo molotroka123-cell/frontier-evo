@@ -52,7 +52,7 @@
 //    строки (население, постройки, технологии, поселения, войны).
 
 import { BUILDINGS, TECHS, TECH_ERA_IDX, UNITS, ERAS, FACTIONS } from '../data.js';
-import { WALKABLE } from '../data.js';
+import { WALKABLE, TILE } from '../data.js';
 import { tileAt, isWater } from '../world.js';
 import {
   openWar, isAtWar, inTruce, warEnemies, hasCasusBelli, consumeCasusBelli,
@@ -94,6 +94,14 @@ export const FOUND_COST = { food: 120, wood: 80 };
 export const FOUND_MIN_DIST = 8;    // не впритык к чужим и своим
 export const FOUND_MAX_DIST = 20;   // и не на другом конце света
 export const COLONISTS = 6;
+
+// Умная экспансия и оборона (усиление модели поведения поселений)
+export const PLAYER_SETTLE_GAP = 6; // при агрессии<7 не селимся ближе стольких клеток к сильному игроку
+export const EXPANSION_PLAYER_FEAR = 14; // мягкое предпочтение дистанции от игрока при низкой агрессии
+export const SPOT_RES_R = 3;        // радиус учёта леса/камня при выборе клетки под выселок
+export const THREAT_DIST = 18;      // игрок ближе стольких клеток считается стоящим «у границ»
+export const ABANDON_POP = 3;       // среднее население на живое поселение ниже — посёлку не выжить
+export const ABANDON_STARVE_DAYS = 10; // столько дней непрерывного голода переживёт деревня
 
 // Решения (разнесены по дням, чтобы не сходились в один тик)
 export const DECISION_PERIOD = 10;
@@ -159,6 +167,9 @@ export function addCiv(state, f) {
     alliesMade: 0,
     built: 0,
     starveDays: 0,
+    holdDays: 0,            // сколько дней армия удерживается дома (война/сильный игрок у границ)
+    migrations: 0,          // покинутых безнадёжных деревень
+    despaired: false,       // фракция доживает: новые стройки и колонии заморожены
     terrain: null,          // кэш «какие тайлы доступны» — пересчёт при новом городе
     terrainAt: -1,
     tr,
@@ -192,6 +203,8 @@ export function tickCivAi(state, ctx) {
   for (const f of live) {
     const c = state.civ[f.id] || addCiv(state, f);
     economy(c, f, ctx, out);
+    assessThreat(c, f, ctx, rng);
+    if (c.despaired) { sync(c, f); continue; } // стоп-апгрейды: посёлки доживает (см. economy)
     research(c, f, ctx, out);
     construction(c, f, ctx, rng, out);
     military(c, f, ctx);
@@ -207,9 +220,15 @@ export function tickCivAi(state, ctx) {
 }
 
 // ---------- Экономика: производство, еда, население ----------
+// Живые поселения: покинутые (dead) не кормят никого — их жильё и склады
+// выпали из ёмкости страны вместе с ушедшими жителями.
+export function aliveTowns(f) {
+  return (f.settlements || []).filter(s => !s.dead);
+}
+
 function economy(c, f, ctx, out) {
   const tr = c.tr, bn = bonus(f), pn = penalty(f);
-  const towns = Math.max(1, (f.settlements || []).length);
+  const towns = Math.max(1, aliveTowns(f).length);
   let workers = Math.floor(Math.max(0, f.P) * WORK_SHARE);
   const gain = emptyRes();
   let housing = BASE_HOUSING * towns;
@@ -278,6 +297,34 @@ function economy(c, f, ctx, out) {
   c._housing = housing;
   c._defense = defense;
   c._armyMult = armyMult;
+
+  // г) Оптимизация безнадёги. ЧЕСТНОЕ ОГРАНИЧЕНИЕ: в модели нет населения
+  // по отдельным поселениям — f.P общий на фракцию, а казна и склады (c.res)
+  // и так общие, «перевозить» нечего. Поэтому деревня считается безнадёжной
+  // по средней людности: если голод длится ABANDON_STARVE_DAYS подряд, а
+  // людей на живое поселение меньше ABANDON_POP, дальний посёлок помечается
+  // мёртвым (dead), его жильё и склады выпадают из ёмкости страны, а счётчик
+  // миграций растёт. Из массива settlements посёлок НЕ удаляется: на объекты
+  // могут ссылаться чужие модули (границы, войны), рвать ссылки нельзя.
+  if (c.starveDays >= ABANDON_STARVE_DAYS) {
+    const alive = aliveTowns(f);
+    if (alive.length > 1 && f.P / alive.length < ABANDON_POP) {
+      const cap = alive.find(s => s.capital) || alive[0];
+      let far = null, fd = -1;
+      for (const s of alive) {
+        if (s.capital) continue;                 // столицу не бросают
+        const d = Math.hypot(s.x - cap.x, s.y - cap.y);
+        if (d > fd) { fd = d; far = s; }
+      }
+      if (far) {
+        far.dead = true;                         // штатная пометка вместо удаления
+        c.migrations++;
+        c.terrainAt = -1;                        // окрестности стали другими
+        out.logs.push(`${f.def.name} снимает дальний посёлок (${far.x}, ${far.y}): люди уходят к столице.`);
+      }
+    }
+  }
+
   if (c.starveDays > 40 && f.P <= 3) { f.alive = false; out.logs.push(`${f.def.name} угас от голода.`); }
 }
 
@@ -374,7 +421,18 @@ function chooseBuilding(c, f, ctx, rng) {
     if (def.housing) s += (houseTight ? 0.09 : 0.015) * def.housing;
     if (def.armyMult) s += (def.armyMult - 1) * 6 * (tr.aggression / 5);
     if (def.special === 'train') s += 0.5 * (tr.aggression / 5);
-    if (def.defense) s += def.defense * 0.06 * (tr.defense / 5);
+    // а) Фортификация столицы: черта defense (0..9) задаёт вес защитных зданий.
+    // «Черепаха» строит стены прежде амбаров, орда — после; при войне или
+    // сильном игроке у границ (c._threatened из assessThreat) вес удваивается,
+    // а первое укрепление голой столицы — срочный приоритет.
+    let fort = 0;
+    if (def.defense) fort += def.defense * 0.22 * (tr.defense / 5);
+    if (def.special === 'train') fort += 0.3 * (tr.defense / 5); // казарма тоже щит
+    if (fort > 0) {
+      if (c._threatened) fort *= 2;
+      if (!(c.buildings.palisade || c.buildings.stone_walls || c.buildings.castle)) fort *= 1.6;
+      s += fort;
+    }
     if (def.happy) s += def.happy * 0.035 * (tr.faith / 5);
     if (def.industry) s += (def.industry - 1) * 3;
     if (def.cap) s += 0.2;
@@ -412,12 +470,44 @@ function terrainOf(c, f, world) {
   return c.terrain;
 }
 
+// ---------- Оценка угрозы ----------
+// Соседи судят об игроке только по видимому: где стоят его поселения и сколько
+// у него войска — с тем же шумом ±25%, что и при оценке чужих фракций в
+// warDecisions. Скрытых данных игрока (казна, склады, планы) модуль не читает.
+// Результат кладётся в кэш дня: construction смотрит его в тот же день,
+// colonize и military — тоже.
+function assessThreat(c, f, ctx, rng) {
+  const P = ctx.player;
+  const mine = Math.max(1, f.armyPts || 1);
+  let dist = Infinity, seen = 0;
+  if (P && (P.settlements || []).length) {
+    dist = nearestDist(f, { settlements: P.settlements });
+    if (rng) {
+      const noise = ctx.difficulty === 'easy' ? 0.5 : ctx.difficulty === 'hard' ? 0.1 : 0.25;
+      seen = Math.max(1, (P.armyPower || 0) * (1 + rng.range(-noise, noise)));
+    }
+  }
+  const atWar = !!(ctx.diplo && warEnemies(ctx.diplo, f.id).length > 0);
+  c._playerDist = dist;
+  c._seenPlayerPower = seen; // оценка с шумом — «сколько мы ДУМАЕМ, что у него войска»
+  c._atWar = atWar;
+  // Угроза: сама война или сильный игрок, вставший ближе двух переходов.
+  c._threatened = atWar || (dist <= THREAT_DIST && seen > mine * 0.8);
+}
+
 // ---------- Армия ----------
 function military(c, f, ctx) {
   const tr = c.tr, bn = bonus(f), pn = penalty(f);
   const atWar = ctx.diplo ? warEnemies(ctx.diplo, f.id).length > 0 : 0;
   const barracks = c.buildings.barracks || 0;
   const want = f.P * (0.10 + tr.aggression * 0.03) * (1 + (atWar ? 0.6 : 0));
+  // в) Гарнизон: армия в модели общая на страну, отдельных отрядов нет —
+  // поэтому привязка мягкая. При угрозе (война или сильный игрок у границ,
+  // см. assessThreat) резервы не размываются в дальние походы: колонисты
+  // остаются дома (см. colonize), дезертирство вдвое слабее — гарнизон у
+  // стен платится первым. Счётчик нужен тестам и панели соседей.
+  if (c._threatened) c.holdDays++;
+  const desertion = DESERT_RATE * (c._threatened ? 0.5 : 1);
   // Содержание: неоплаченная армия разбегается — это и держит мирные фракции
   // от бесконечного накопления войск.
   const upkeepG = c.troops * UPKEEP_GOLD, upkeepF = c.troops * UPKEEP_FOOD;
@@ -426,7 +516,7 @@ function military(c, f, ctx) {
   } else {
     c.res.gold = Math.max(0, c.res.gold - upkeepG);
     c.res.food = Math.max(0, c.res.food - upkeepF);
-    c.troops *= (1 - DESERT_RATE);
+    c.troops *= (1 - desertion);
   }
   // Набор идёт только с излишков: страна не проедает семенной фонд и не
   // опустошает казну ради лишнего копейщика — иначе воинственные фракции
@@ -454,14 +544,18 @@ function military(c, f, ctx) {
 // ---------- Колонизация ----------
 function colonize(c, f, ctx, rng, out) {
   if (!ctx.world || !rng) return;
-  const towns = (f.settlements || []).length;
+  const towns = Math.max(1, aliveTowns(f).length);
   // Терпимость к тесноте — это и есть черта expansion: степняк отделяет колонию
   // при вдвое меньшем населении, чем лесное согласие.
   const need = FOUND_POP * towns * (12 / (6 + c.tr.expansion));
   if (f.P < need) return;
+  // в) Гарнизон: пока страна воюет или держит оборону против сильного игрока,
+  // резервы не размываются в дальние походы — выселок не основывается.
+  // Исключение — прирождённые завоеватели: им поход и есть экспансия.
+  if (c._threatened && c.tr.aggression < 8 && c.tr.expansion < 8) return;
   const k2 = (bonus(f).outpost || 1) * (penalty(f).outpost || 1);
   for (const k of Object.keys(FOUND_COST)) if (c.res[k] < FOUND_COST[k] * k2) return;
-  const spot = findSpot(f, ctx, rng);
+  const spot = findSpot(c, f, ctx, rng);
   if (!spot) return;
   for (const k of Object.keys(FOUND_COST)) c.res[k] -= FOUND_COST[k] * k2;
   f.settlements.push({ x: spot.x, y: spot.y, capital: false });
@@ -472,13 +566,22 @@ function colonize(c, f, ctx, rng, out) {
   out.logs.push(`${f.def.name} основал поселение (${spot.x}, ${spot.y}).`);
 }
 
-// Место под город: проходимая суша, не впритык к чужим и своим, и с сушей
-// вокруг — колония на одиноком мысу не прокормится.
-function findSpot(f, ctx, rng) {
+// Место под город: проходимая суша, не впритык к чужим и своим, с сушей вокруг,
+// рядом лес и камень (под лесопилку, каменоломню, шахту) — а робкий народ ещё
+// и держится подальше от сильного игрока. Из всех валидных кандидатов берём
+// лучший по сумме выгод, а не первый попавшийся.
+function findSpot(c, f, ctx, rng) {
   const world = ctx.world;
   const all = [];
-  for (const o of ctx.factions || []) for (const s of o.settlements || []) all.push(s);
-  for (const s of (ctx.player && ctx.player.settlements) || []) all.push(s);
+  for (const o of ctx.factions || []) for (const s of aliveTowns(o)) all.push(s);
+  const pset = (ctx.player && ctx.player.settlements) || [];
+  for (const s of pset) all.push(s);
+  // б) Умная экспансия: силу игрока оцениваем с тем же шумом ±25% (кость уже
+  // брошена сегодня в assessThreat — второй раз её не бросаем), скрытых
+  // данных не читаем. Робкий (aggression<7) не селится у самого плеча игрока,
+  // чья армия выглядит не слабее своей.
+  const scared = c.tr.aggression < 7 && (c._seenPlayerPower || 0) > Math.max(1, f.armyPts || 1);
+  let best = null, bestScore = -Infinity;
   for (let attempt = 0; attempt < 40; attempt++) {
     const from = rng.pick(f.settlements);
     if (!from) return null;
@@ -488,14 +591,29 @@ function findSpot(f, ctx, rng) {
     if (x < 3 || y < 3 || x >= world.w - 3 || y >= world.h - 3) continue;
     if (!WALKABLE.has(tileAt(world, x, y))) continue;
     if (all.some(s => Math.hypot(s.x - x, s.y - y) < FOUND_MIN_DIST)) continue;
-    let land = 0;
+    let pd = Infinity; // дистанция до войск/поселений игрока
+    for (const s of pset) pd = Math.min(pd, Math.hypot(s.x - x, s.y - y));
+    // Робкий народ не селится у сильного игрока: законом задан минимум в
+    // 6 клеток, но по-хорошему он и вовсе держит EXPANSION_PLAYER_FEAR —
+    // под чужим мечом посёлок не строится, что бы там ни росло.
+    if (scared && pd < Math.max(PLAYER_SETTLE_GAP, EXPANSION_PLAYER_FEAR)) continue;
+    let land = 0, res = 0;
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
       if (WALKABLE.has(tileAt(world, x + dx, y + dy))) land++;
     }
     if (land < 14) continue;
-    return { x, y };
+    // Лес кормит лесопилку, холмы и горы — каменоломню и шахту: голая равнина
+    // прокормит хижины, но не построит ничего.
+    for (let dy = -SPOT_RES_R; dy <= SPOT_RES_R; dy++) for (let dx = -SPOT_RES_R; dx <= SPOT_RES_R; dx++) {
+      const t = tileAt(world, x + dx, y + dy);
+      if (t === TILE.FOREST || t === TILE.HILL || t === TILE.MOUNTAIN) res++;
+    }
+    let score = land * 0.02 + res * 0.35;
+    score += Math.min(pd, EXPANSION_PLAYER_FEAR) * 0.05; // лёгкое предпочтение подальше от игрока
+    score += rng.next() * 0.5; // жеребьёвка между равноценными местами
+    if (score > bestScore) { bestScore = score; best = { x, y }; }
   }
-  return null;
+  return best;
 }
 
 // ---------- Войны ----------
@@ -588,8 +706,11 @@ function allyDecisions(state, ctx, out, day, live) {
 }
 
 function nearestDist(a, b) {
+  // Покинутые деревни (dead) дистанций не строят: людей там нет.
+  const A = (a.settlements || []).filter(s => !s.dead);
+  const B = (b.settlements || []).filter(s => !s.dead);
   let best = Infinity;
-  for (const s of a.settlements || []) for (const t of b.settlements || []) {
+  for (const s of A) for (const t of B) {
     const d = Math.hypot(s.x - t.x, s.y - t.y);
     if (d < best) best = d;
   }
@@ -619,13 +740,13 @@ function sync(c, f) {
 // Одна строка на фракцию — и для панели соседей, и для доказательства в тесте.
 export function civReport(state, factions) {
   return (factions || []).map(f => {
-    const c = state.civ[f.id] || { res: emptyRes(), techs: [], buildings: {}, troops: 0, founded: 0, warsDeclared: 0, alliesMade: 0, built: 0, tr: traits(f) };
+    const c = state.civ[f.id] || { res: emptyRes(), techs: [], buildings: {}, troops: 0, founded: 0, warsDeclared: 0, alliesMade: 0, built: 0, holdDays: 0, migrations: 0, tr: traits(f) };
     return {
       id: f.id,
       name: (f.def && f.def.name) || f.id,
       alive: !!f.alive,
       pop: Math.round(f.P || 0),
-      towns: (f.settlements || []).length,
+      towns: aliveTowns(f).length,
       buildings: buildingCount(state, f.id),
       techs: c.techs.length,
       era: f.era || 0,
@@ -635,6 +756,8 @@ export function civReport(state, factions) {
       wars: c.warsDeclared,
       allies: c.alliesMade,
       founded: c.founded,
+      holdDays: c.holdDays || 0,
+      migrations: c.migrations || 0,
       traits: c.tr,
     };
   });
@@ -649,6 +772,7 @@ export function serializeCivAi(state) {
       site: c.site ? { ...c.site } : null, troops: c.troops, research: c.research,
       founded: c.founded, warsDeclared: c.warsDeclared, alliesMade: c.alliesMade,
       built: c.built, starveDays: c.starveDays,
+      holdDays: c.holdDays, migrations: c.migrations, despaired: !!c.despaired,
     };
   }
   return { v: 1, civ, lastDay: state.lastDay };
@@ -674,6 +798,9 @@ export function deserializeCivAi(data, factions = []) {
     c.alliesMade = d.alliesMade || 0;
     c.built = d.built || 0;
     c.starveDays = d.starveDays || 0;
+    c.holdDays = d.holdDays || 0;
+    c.migrations = d.migrations || 0;
+    c.despaired = !!d.despaired;
     c.terrain = null; c.terrainAt = -1; // кэш рельефа не сохраняем — он дешёвый
   }
   return state;
