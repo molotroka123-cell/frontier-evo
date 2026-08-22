@@ -30445,15 +30445,7 @@ ${s}`, "console");
       if (this.quality.fireflies) this.drawFireflies(sim2, ctx, ox, oy, z, cw, ch, dtReal, L);
       if (this.quality.birds) this.drawBirds(ctx, cw, ch, dtReal, L);
       this.atmo.drawOverlay(sim2, ctx, ox, oy, z, cw, ch);
-      if (L.tint[3] > 8e-3) {
-        ctx.fillStyle = `rgba(${L.tint[0]},${L.tint[1]},${L.tint[2]},${L.tint[3]})`;
-        ctx.fillRect(0, 0, cw, ch);
-      }
-      const wt = WEATHER_TINT[sim2.weather];
-      if (wt && wt.tint[3] > 8e-3) {
-        ctx.fillStyle = `rgba(${wt.tint[0]},${wt.tint[1]},${wt.tint[2]},${wt.tint[3]})`;
-        ctx.fillRect(0, 0, cw, ch);
-      }
+      this.atmo.drawTone(sim2, ctx, cw, ch, L);
       if (this.quality.godRays) this.drawGodRays(ctx, cw, ch, L);
       this.fx.drawSky(ctx, cw, ch);
       const sp = sim2.buildings.find((b) => b.id === "spire" && !b.destroyed);

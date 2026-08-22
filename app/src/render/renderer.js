@@ -17,7 +17,7 @@ import { FxLayer } from './fx.js';
 import { SelectLayer } from './select.js';
 import { IconLayer } from './icons.js';
 import { CityLights } from './city_lights.js';
-import { lightAt, WEATHER_TINT, hash2 } from './palette.js';
+import { lightAt, hash2 } from './palette.js';
 
 const TILE_PX = 32; // мировая единица «тайл→экран» при zoom=1 — НЕ зависит от пресета графики
 
@@ -231,15 +231,11 @@ export class Renderer {
     this.atmo.drawOverlay(sim, ctx, ox, oy, z, cw, ch);
 
     // --- свет по времени суток + погодный тон ---
-    if (L.tint[3] > 0.008) {
-      ctx.fillStyle = `rgba(${L.tint[0]},${L.tint[1]},${L.tint[2]},${L.tint[3]})`;
-      ctx.fillRect(0, 0, cw, ch);
-    }
-    const wt = WEATHER_TINT[sim.weather];
-    if (wt && wt.tint[3] > 0.008) {
-      ctx.fillStyle = `rgba(${wt.tint[0]},${wt.tint[1]},${wt.tint[2]},${wt.tint[3]})`;
-      ctx.fillRect(0, 0, cw, ch);
-    }
+    // Раньше здесь были две плоские заливки сверху (серая плёнка гасила
+    // контраст). drawTone() собирает ночь в один multiply с подъёмом теней,
+    // тёплый рассвет и погоду — в одну накрывающую заливку: максимум три
+    // полноэкранных прохода вместо семи. На eco внутри включается прежний путь.
+    this.atmo.drawTone(sim, ctx, cw, ch, L);
 
     // --- рассветные/закатные лучи ---
     if (this.quality.godRays) this.drawGodRays(ctx, cw, ch, L);
