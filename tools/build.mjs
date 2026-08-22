@@ -96,7 +96,22 @@ if (!html.includes(MARKER)) {
 }
 // </script> внутри строк JS разорвал бы тег — экранируем на всякий случай.
 const safeJs = js.replace(/<\/script>/gi, '<\\/script>');
-writeFileSync(OUT, html.replace(MARKER, `${artTag}<script>\n${safeJs}\n</script>`), 'utf8');
+
+// Тема подключена линком ради dev-режима, но frontier.html обязан остаться
+// самодостаточным (file:// без сети) — поэтому в билде линк заменяется
+// инлайн-стилем с тем же содержимым.
+const THEME_LINK = '<link rel="stylesheet" href="src/ui/theme.css">';
+let themed = html;
+try {
+  const css = readFileSync(join(ROOT, 'app', 'src', 'ui', 'theme.css'), 'utf8');
+  if (!html.includes(THEME_LINK)) {
+    console.error('ОШИБКА: в app/index.html не найдена ссылка на тему:', THEME_LINK);
+    process.exit(1);
+  }
+  themed = html.replace(THEME_LINK, `<style>\n${css}\n</style>`);
+} catch { /* файла темы нет — собираем как есть */ }
+
+writeFileSync(OUT, themed.replace(MARKER, `${artTag}<script>\n${safeJs}\n</script>`), 'utf8');
 
 const kb = (statSync(OUT).size / 1024).toFixed(0);
 console.log(`frontier.html собран: ${kb} КБ (bundle ${(js.length / 1024).toFixed(0)} КБ) · нарисованных спрайтов: ${artCount}`);

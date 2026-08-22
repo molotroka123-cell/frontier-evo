@@ -1,0 +1,355 @@
+/* ============================================================
+   menuskin.css — скин правой меню-панели («ФРОНТИР»).
+   Подключается вручную из index.html ИЛИ рантаймом из menuskin.js
+   (который не дублирует <link>, если тот уже стоит).
+   Ничего не переименовывает и не двигает: только внешний вид.
+   Все новые классы — с префиксом msk-. Офлайн: никаких внешних
+   ресурсов, шрифт — системный стек. Анимации — только при
+   prefers-reduced-motion: no-preference.
+   ============================================================ */
+
+/* ---------- общие переменные скина ---------- */
+#sidePanel.msk-root,
+#sheet.msk-root {
+  --msk-gold: #c9a227;
+  --msk-gold-hi: #e3c766;
+  --msk-gold-dim: rgba(201, 162, 39, .32);
+  --msk-panel: linear-gradient(180deg, rgba(20, 27, 41, .97), rgba(13, 19, 30, .97));
+  --msk-text: #ece8dc;
+  --msk-dim: #b3ac9d;      /* ≥5:1 на фоне панели */
+  --msk-desc: #a49d8e;     /* ≥4.6:1 */
+  --msk-cap: #cfae62;      /* подписи секций, ~7:1 */
+  --msk-res-food: #e0955a;
+  --msk-res-wood: #b08d57;
+  --msk-res-stone: #aab4bd;
+  --msk-res-steel: #86b7d6;
+  --msk-res-gold: #ecc94b;
+  --msk-res-know: #b39ddb;
+  font-family: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+}
+
+/* ---------- оболочка панели (ПК) ---------- */
+#sidePanel.msk-root {
+  background: var(--msk-panel);
+  border-color: rgba(201, 162, 39, .30);
+  border-radius: 14px;
+  box-shadow: 0 14px 44px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+/* мягкий золотой отблеск сверху панели */
+#sidePanel.msk-root::before {
+  content: '';
+  position: absolute; left: 0; right: 0; top: 0; height: 70px;
+  background: linear-gradient(180deg, rgba(201, 162, 39, .09), rgba(201, 162, 39, 0));
+  pointer-events: none;
+  border-radius: 14px 14px 0 0;
+}
+
+/* ---------- вкладки ПК: пилюли с иконками ---------- */
+@media (min-width: 821px) {
+  #sidePanel.msk-root #sideTabs {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-content: flex-start !important;
+    gap: 3px !important;
+    padding: 7px 10px 3px !important;
+    background: rgba(8, 12, 20, .45) !important;
+    border-bottom: none !important;
+    box-shadow: 0 1px 0 rgba(201, 162, 39, .22), inset 0 -12px 16px -14px rgba(0, 0, 0, .8) !important;
+  }
+  /* кнопка остаётся ПРЯМЫМ ребёнком #sideTabs (это критично для setTab()),
+     меняется только вид */
+  #sidePanel.msk-root #sideTabs button {
+    flex: 0 1 auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    min-height: 44px;
+    padding: 6px 13px !important;
+    border-radius: 999px !important;
+    border: 1px solid transparent !important;
+    border-bottom: 1px solid transparent !important;
+    background: rgba(255, 255, 255, .035) !important;
+    color: var(--msk-dim) !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    letter-spacing: .2px !important;
+    cursor: pointer;
+  }
+  #sidePanel.msk-root #sideTabs button:hover {
+    color: #efe9da !important;
+    background: rgba(201, 162, 39, .13) !important;
+    border-color: rgba(201, 162, 39, .38) !important;
+  }
+  /* активная пилюля — золото #c9a227 */
+  #sidePanel.msk-root #sideTabs button.active {
+    color: #191307 !important;
+    background: linear-gradient(180deg, #ddb946, var(--msk-gold)) !important;
+    border-color: var(--msk-gold-hi) !important;
+    box-shadow: 0 2px 10px rgba(201, 162, 39, .35), inset 0 1px 0 rgba(255, 255, 255, .38) !important;
+  }
+  #sidePanel.msk-root #sideTabs button:focus-visible,
+  #sheet.msk-root #sheetTabs button:focus-visible {
+    outline: 2px solid var(--msk-gold-hi);
+    outline-offset: 1px;
+  }
+
+  /* подписи секций вкладок */
+  #sidePanel.msk-root #sideTabs .msk-sep {
+    flex-basis: 100% !important;
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+    margin-top: 5px;
+    min-height: 0;
+    pointer-events: none;
+    user-select: none;
+  }
+  #sidePanel.msk-root #sideTabs .msk-sep::before,
+  #sidePanel.msk-root #sideTabs .msk-sep::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(201, 162, 39, .28));
+  }
+  #sidePanel.msk-root #sideTabs .msk-sep::after {
+    background: linear-gradient(90deg, rgba(201, 162, 39, .28), transparent);
+  }
+  #sidePanel.msk-root #sideTabs .msk-sep > span {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    color: var(--msk-cap);
+    white-space: nowrap;
+  }
+
+  /* контент панели */
+  #sidePanel.msk-root #sideContent { padding: 10px 11px 14px !important; }
+}
+
+/* иконки во вкладках (SVG вставляет menuskin.js) */
+#sidePanel.msk-root .msk-tic,
+#sheet.msk-root .msk-tic {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+#sidePanel.msk-root .msk-tic svg,
+#sheet.msk-root .msk-tic svg {
+  width: 15px; height: 15px;
+  display: block;
+}
+#sheet.msk-root .msk-tic svg { width: 17px; height: 17px; }
+
+/* ---------- нижний шит (телефон) ---------- */
+#sheet.msk-root {
+  background: var(--msk-panel);
+  border-top-color: rgba(201, 162, 39, .30);
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, .55);
+}
+@media (max-width: 820px) {
+  #sheet.msk-root #sheetHandle::before {
+    width: 48px;
+    background: var(--msk-gold);
+    opacity: .75;
+  }
+  /* одна горизонтальная лента пилюль со скроллом вместо 14 колонок */
+  #sheet.msk-root #sheetTabs {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    gap: 4px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  #sheet.msk-root #sheetTabs::-webkit-scrollbar { display: none; }
+  #sheet.msk-root #sheetTabs button {
+    flex: 0 0 auto !important;
+    min-width: 56px;
+    min-height: 44px;
+    padding: 5px 10px calc(5px + var(--safe-bottom, 0px)) !important;
+    margin-bottom: 0;
+    border-radius: 12px 12px 0 0;
+    border-bottom: 2px solid transparent;
+    color: var(--msk-dim) !important;
+    scroll-snap-align: start;
+  }
+  #sheet.msk-root #sheetTabs button.active {
+    color: var(--msk-gold-hi) !important;
+    background: rgba(201, 162, 39, .14);
+    border-bottom-color: var(--msk-gold);
+  }
+  #sheet.msk-root #sheetContent { padding: 10px 12px calc(12px + var(--safe-bottom, 0px)) !important; }
+}
+
+/* ---------- скроллбары панелей ---------- */
+#sidePanel.msk-root #sideContent,
+#sheet.msk-root #sheetContent {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(201, 162, 39, .45) transparent;
+}
+#sidePanel.msk-root #sideContent::-webkit-scrollbar { width: 9px; }
+#sheet.msk-root #sheetContent::-webkit-scrollbar { width: 9px; }
+#sidePanel.msk-root #sideContent::-webkit-scrollbar-track,
+#sheet.msk-root #sheetContent::-webkit-scrollbar-track { background: transparent; }
+#sidePanel.msk-root #sideContent::-webkit-scrollbar-thumb,
+#sheet.msk-root #sheetContent::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(201, 162, 39, .5), rgba(201, 162, 39, .25));
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+#sidePanel.msk-root #sideContent::-webkit-scrollbar-thumb:hover,
+#sheet.msk-root #sheetContent::-webkit-scrollbar-thumb:hover { background-color: rgba(227, 199, 102, .65); }
+
+/* ---------- карточки ---------- */
+#sideContent .card,
+#sheetContent .card {
+  position: relative;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .058), rgba(255, 255, 255, .026));
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 10px;
+  padding: 11px 12px;
+  margin-bottom: 9px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04), 0 3px 12px rgba(0, 0, 0, .25);
+}
+/* золотая насечка слева у кликабельных карточек */
+#sideContent .card[data-build]::before,
+#sideContent .card[data-tech]::before,
+#sideContent .card[data-train]::before,
+#sideContent .card[data-market]::before,
+#sideContent .card[data-mission]::before,
+#sheetContent .card[data-build]::before,
+#sheetContent .card[data-tech]::before,
+#sheetContent .card[data-train]::before,
+#sheetContent .card[data-market]::before,
+#sheetContent .card[data-mission]::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 9px; bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, var(--msk-gold), rgba(201, 162, 39, .18));
+  opacity: .85;
+}
+#sideContent .card.disabled,
+#sheetContent .card.disabled {
+  opacity: .42;
+  filter: saturate(.55);
+}
+#sideContent .card.done-card,
+#sheetContent .card.done-card {
+  border-color: rgba(125, 227, 125, .45);
+  background: linear-gradient(180deg, rgba(125, 227, 125, .07), rgba(125, 227, 125, .02));
+}
+
+#sideContent .card .ttl,
+#sheetContent .card .ttl {
+  font-weight: 650;
+  font-size: 13px;
+  letter-spacing: .1px;
+  align-items: baseline;
+  gap: 8px;
+}
+#sideContent .card .desc,
+#sheetContent .card .desc { color: var(--msk-desc, #a49d8e); line-height: 1.4; margin-top: 4px; }
+#sideContent .card .reason,
+#sheetContent .card .reason { color: #ef9090; margin-top: 4px; }
+
+/* заголовки групп внутри списков (эпохи, «Линейка юнитов»…) */
+#sideContent h4.group,
+#sheetContent h4.group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--msk-cap, #cfae62);
+  font-size: 10.5px;
+  letter-spacing: 1.4px;
+  margin: 14px 2px 7px;
+}
+#sideContent h4.group::after,
+#sheetContent h4.group::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(201, 162, 39, .30), transparent);
+}
+
+/* строка «ключ–значение» и полоса отношений */
+#sideContent .kv, #sheetContent .kv { border-bottom-color: rgba(255, 255, 255, .05); }
+#sideContent .relbar, #sheetContent .relbar { height: 6px; border-radius: 99px; }
+
+/* ---------- цена ресурсными чипами с цветными точками ----------
+   Разметку чипов ставит menuskin.js: <span class="msk-res"><i></i>20</span> */
+.msk-res {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px 1px 5px;
+  margin: 1px 0;
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+.msk-res i {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 4px 0 currentColor;
+}
+.msk-res.msk-food     i { background: var(--msk-res-food, #e0955a); }
+.msk-res.msk-wood     i { background: var(--msk-res-wood, #b08d57); }
+.msk-res.msk-stone    i { background: var(--msk-res-stone, #aab4bd); }
+.msk-res.msk-steel    i { background: var(--msk-res-steel, #86b7d6); }
+.msk-res.msk-gold     i { background: var(--msk-res-gold, #ecc94b); }
+.msk-res.msk-knowledge i { background: var(--msk-res-know, #b39ddb); }
+
+/* стоимость внутри заголовка карточки — выровненный столбик чипов */
+#sideContent .card .cost:not(:empty),
+#sheetContent .card .cost:not(:empty) {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  max-width: 62%;
+  color: inherit;
+}
+
+/* ---------- ховеры/анимации — только если движение разрешено ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  #sideContent .card,
+  #sheetContent .card {
+    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+  }
+  #sideContent .card:hover,
+  #sheetContent .card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(201, 162, 39, .55);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04), 0 8px 22px rgba(0, 0, 0, .38);
+  }
+  #sideContent .card:active,
+  #sheetContent .card:active { transform: translateY(0); }
+  #sidePanel.msk-root #sideTabs button,
+  #sheet.msk-root #sheetTabs button {
+    transition: background .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
+  }
+}
+/* а при явном запрете движения внутри панели не анимируется вообще ничего */
+@media (prefers-reduced-motion: reduce) {
+  #sidePanel.msk-root *,
+  #sheet.msk-root * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ---------- цели (obj) и журнал ---------- */
+#sideContent .obj, #sheetContent .obj { padding: 7px 4px; font-size: 12.5px; }
+#sideContent .obj.current .mark, #sheetContent .obj.current .mark { color: var(--msk-gold-hi); }
