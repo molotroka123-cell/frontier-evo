@@ -28,6 +28,8 @@ import * as MEM from './link_memory.js';
 import * as INT from './link_intel.js';
 import * as MAS from './link_masters.js';
 import * as GH from './link_ghost.js';
+// Род при троне: династия и её дела. Отчёт применяется в applyDynastyLinks ниже.
+import * as DYN from './link_dynasty.js';
 import * as B2 from './build2.js';
 import * as HERD from './herds.js';
 import { tileAt } from '../world.js';
@@ -77,6 +79,12 @@ export function installSystems(sim) {
   sim.linkIntel = INT.createIntel();
   // Ремесло живёт в людях: у каждого промысла свой мастер и свой ученик.
   sim.linkMasters = MAS.createMasters();
+  // Королевский род: династия, наследники, законность, претенденты, интриги.
+  // Установки ЗДЕСЬ НЕТ: createDynasty бросает sim.rng, и лишние броски на
+  // этом месте сдвинули бы общий поток случайностей для всех последующих
+  // ресторов при загрузке сейва (реальный баг: расходился emp.sites.fog).
+  // Род заводится лениво первым же applyDynastyLinks (см. ниже) — а при
+  // загрузке восстанавливается из сейва без единого броска.
   // Тень прошлой партии: слепки состояния через равные промежутки.
   sim.linkGhost = GH.createGhost();
   sim.linkGhost.seed = sim.seed | 0;
@@ -138,6 +146,9 @@ export function systemsNewDay(sim) {
   // Территория идёт ПОСЛЕ выживания: голод может снять город, и его потерю
   // тоже надо разыграть — кому он достался и как это увидели соседи.
   applyTerritoryLinks(sim);
+  // Род читает уже сложившийся день: голод из link_survival и траур по земле
+  // из link_territory он видит по свежим отметкам этих же суток.
+  applyDynastyLinks(sim);
   // Разведка идёт ПОСЛЕ соседей: она читает опасность дорог, которую считает
   // именно link_neighbors. Своей второй оценки опасности быть не должно —
   // игрок читал бы в двух панелях разные числа.
@@ -279,7 +290,8 @@ export function systemsHappyMod(sim) {
     + (sim.sys.nbrLinks ? sim.sys.nbrLinks.mods.happy : 0)
     + MEM.memoryHappyMod(sim)
     + TER.territoryHappyMod(sim)
-    + (sim.sys.warLinks ? sim.sys.warLinks.mods.happy : 0);
+    + (sim.sys.warLinks ? sim.sys.warLinks.mods.happy : 0)
+    + DYN.dynastyHappyMod(sim);
 }
 
 // Своя земля даёт где ставить выселки: площадь границ поднимает потолок
@@ -319,6 +331,7 @@ export function systemsSerialize(sim) {
     ghost: sim.linkGhost || null,
     herds: HERD.serializeHerds(sim.herds),
     build: B2.serializeBuild(sim.build),
+    dyn: DYN.serializeDynasty(sim),
   };
 }
 
@@ -342,6 +355,7 @@ export function systemsRestore(sim, data) {
   sim.linkGhost = GH.restoreGhost(data.ghost);
   sim.herds = HERD.restoreHerds(data.herds);
   sim.build = B2.restoreBuild(data.build);
+  if (data.dyn) DYN.restoreDynasty(sim, data.dyn);
 }
 
 // ---------- Для HUD ----------
@@ -808,6 +822,49 @@ function applyTerritoryLinks(sim) {
   return out;
 }
 
+// Связь «род ↔ держава»: законность, претенденты, заговоры и преемственность.
+// Модуль ничего не меняет — новое состояние приходит через flags.state.
+function applyDynastyLinks(sim) {
+  if (!sim.linkDynasty) sim.linkDynasty = DYN.dynastyInstall(sim);
+  const rep = DYN.dynastyNewDay(sim);
+  sim.linkDynasty = rep.flags.state;
+  sim.sys.dynLinks = rep;                   // для HUD: панель и happiness() читают готовый отчёт
+
+  // Шаткий трон давит на порядок; разовые удары (пресечение рода, мятеж
+  // претендента, зрелый заговор) приходят тем же полем.
+  if (rep.mods.stab !== 0 && sim.politics && sim.politics.state) {
+    const pst = sim.politics.state;
+    pst.stability = Math.max(0, Math.min(100, pst.stability + rep.mods.stab));
+  }
+
+  // Двор живёт на казну: содержание списывает этот слой, а не модуль.
+  if (rep.flags.courtGold > 0) {
+    sim.res.gold = Math.max(0, sim.res.gold - rep.flags.courtGold);
+  }
+
+  // Смена правителя: карточку наследника получает и политика, иначе панель
+  // «Держава» и вкладка «Род» показали бы двух разных людей.
+  if (rep.flags.newRuler && sim.politics && sim.politics.state) {
+    const pst = sim.politics.state;
+    pst.ruler = {
+      name: rep.flags.newRuler.name,
+      age: rep.flags.newRuler.ageYears,
+      since: sim.day,
+      traits: rep.flags.newRuler.traits,
+    };
+    pst.rulersCount = Math.max(1, (pst.rulersCount || 1) + 1);
+    sim.addChronicle(`Власть у рода ${sim.linkDynasty.house ? sim.linkDynasty.house.name : ''}: правитель ${rep.flags.newRuler.name}.`);
+  }
+
+  // Причины названы словами: каждая строка — в журнал.
+  for (const r of rep.reasons) sim.addLog(r);
+  for (const e of rep.events) {
+    sim.addLog(e.text, e.type === 'good' ? 'good' : e.type);
+    if (e.chronicle) sim.addChronicle(e.text);
+  }
+  return rep;
+}
+
 // Связь «выживание → держава»: холод, голод и болезни доходят до трона.
 function applySurvivalLinks(sim) {
   if (!sim.linkSurvival) sim.linkSurvival = LS.createSurvivalMemory();
@@ -864,4 +921,5 @@ export const PANELS = {
   war:      { render: WAR.renderPanel,           bind: WAR.bindPanel },
   politics: { render: POL.renderPoliticsPanel,   bind: POL.bindPoliticsPanel },
   empire:   { render: EMP.renderEmpirePanel,     bind: EMP.bindEmpirePanel },
+  dynasty:  { render: DYN.renderDynastyPanel,    bind: DYN.bindDynastyPanel },
 };

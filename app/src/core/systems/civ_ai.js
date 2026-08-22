@@ -609,8 +609,8 @@ function findSpot(c, f, ctx, rng) {
       if (t === TILE.FOREST || t === TILE.HILL || t === TILE.MOUNTAIN) res++;
     }
     let score = land * 0.02 + res * 0.35;
-    score += Math.min(pd, EXPANSION_PLAYER_FEAR) * 0.05; // лёгкое предпочтение подальше от игрока
-    score += rng.next() * 0.5; // жеребьёвка между равноценными местами
+    score += Math.min(pd, EXPANSION_PLAYER_FEAR) * (scared ? 0.15 : 0.04);
+    score += rng.next() * 0.5; // лёгкая жеребьёвка между равноценными местами
     if (score > bestScore) { bestScore = score; best = { x, y }; }
   }
   return best;

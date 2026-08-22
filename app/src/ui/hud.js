@@ -5,6 +5,7 @@ import { QUALITY, QUALITY_ORDER } from '../render/quality.js';
 import { FileSave } from '../save/saveSystem.js';
 import { renderMarketPanel, bindMarketPanel, createMarketPanelState } from './panel_market.js';
 import { PANELS, memoryPanel, mastersPanel, ghostPanel, intelOf, intelTrustWord } from '../core/systems/integrate.js';
+import { renderDynastyPanel } from '../core/systems/link_dynasty.js';
 
 // Ядро не хранит скоростей добычи: производство размазано по жителям, погоде и
 // разовым событиям дня, а еда вообще списывается одним куском на смене суток.
@@ -26,6 +27,8 @@ const TABS = [
   { id: 'war', ru: 'Война', ic: '🛡' },
   { id: 'politics', ru: 'Держава', ic: '⚖' },
   { id: 'empire', ru: 'Города', ic: '🏛' },
+  // Род при троне: династия, наследники и законность — решения игрока про власть.
+  { id: 'dynasty', ru: 'Род', ic: '👑' },
   { id: 'labor', ru: 'Труд', ic: '👷' },
   { id: 'goals', ru: 'Цели', ic: '🎯' },
   // Летопись — не архив, а действующая механика: что народ помнит, тем и
@@ -912,6 +915,7 @@ export class Hud {
   panel_war()      { return PANELS.war.render(this.sim); }
   panel_politics() { return PANELS.politics.render(this.sim); }
   panel_empire()   { return PANELS.empire.render(this.sim); }
+  panel_dynasty()  { return renderDynastyPanel(this.sim); }
 
   panel_memory() {
     const s = this.sim;
