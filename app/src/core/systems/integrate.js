@@ -304,7 +304,7 @@ export function systemsSerialize(sim) {
     winter: W.serializeWinter(sim.sys.winter),
     borders: B.serializeBorders(sim.sys.borders),
     civ: C.serializeCivAi(sim.sys.civ),
-    pop: POP.populationSerialize ? POP.populationSerialize(sim) : null,
+    pop: POP.serialize(sim),
     ind: IND.industrySerialize(sim),
     war: WAR.serialize(sim),
     pol: POL.politicsSerialize(sim),
@@ -327,7 +327,7 @@ export function systemsRestore(sim, data) {
   if (data.winter) sim.sys.winter = W.deserializeWinter(data.winter);
   if (data.borders) sim.sys.borders = B.deserializeBorders(data.borders);
   if (data.civ) sim.sys.civ = C.deserializeCivAi(data.civ, sim.factions);
-  if (data.pop && POP.populationRestore) POP.populationRestore(sim, data.pop);
+  if (data.pop) POP.restore(sim, data.pop);
   if (data.ind) IND.industryRestore(sim, data.ind);
   if (data.war) WAR.restore(sim, data.war);
   if (data.pol) POL.politicsRestore(sim, data.pol);
