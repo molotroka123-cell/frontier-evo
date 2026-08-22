@@ -376,7 +376,9 @@ function frame(now) {
   }
   // симуляция
   if (!sim.paused) {
-    sim.tick((dtReal / DAY_SECONDS) * hud.speed);
+    // Самая малая скорость замедлена вдвое (запрос игрока): клавиша «1» даёт 0.5×.
+    const spd = hud.speed === 1 ? 0.5 : hud.speed;
+    sim.tick((dtReal / DAY_SECONDS) * spd);
   }
   // HUD
   hudTimer += dtReal;

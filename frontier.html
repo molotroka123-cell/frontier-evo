@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#0d1420">
+<meta name="theme-color" content="#141210">
 <title>ФРОНТИР — эволюция цивилизации</title>
 <style>
   :root {
@@ -277,6 +277,313 @@
 .mem-eff { font-size:12px; margin:8px 2px 2px; }
 #chronList { font-size:12px; line-height:1.6; max-height:38vh; overflow-y:auto; }
 .ghost-svg { width:100%; height:54px; display:block; margin:6px 0 8px; }
+</style>
+<style>
+/* ============================================================
+   ФРОНТИР — тема «Пергамент и уголь»
+   Подключается после инлайн-стилей index.html и ПЕРЕКРАШИВАЕТ:
+   ни один id/класс не удаляется и не переименовывается, логика
+   не трогается. Анимации — только opacity/transform.
+   ============================================================ */
+
+:root {
+  --accent: #c9a227;
+  --bg: #12100d;
+  --panel: rgba(20, 18, 16, 0.92);
+  --panel-border: rgba(201, 162, 39, 0.35);
+  --text: #ece5d3;
+  --dim: #a89f8e;
+  --good: #93de93;
+  --bad: #ef9a9a;
+  --warn: #e8c886;
+  --gold-line: rgba(201, 162, 39, 0.35);
+  --gold-faint: rgba(201, 162, 39, 0.14);
+  --radius: 12px;
+  --mono: Consolas, 'Cascadia Mono', ui-monospace, Menlo, monospace;
+  --serif: Georgia, 'Times New Roman', serif;
+}
+
+/* ===== Верхняя полоса ресурсов: стеклянная полоса + пилюли ===== */
+#topbar {
+  gap: 4px;
+  background: rgba(16, 14, 11, 0.55);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(201, 162, 39, 0.25);
+}
+@supports not ((backdrop-filter: blur(8px)) or (-webkit-backdrop-filter: blur(8px))) {
+  #topbar { background: rgba(16, 14, 11, 0.92); }
+}
+.res {
+  position: relative;
+  margin-right: 8px;
+  padding: 3px 9px;
+  background: rgba(236, 229, 211, 0.05);
+  border: 1px solid rgba(201, 162, 39, 0.16);
+  border-radius: 999px;
+}
+/* точка-разделитель между пилюлями */
+.res + .res::before {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(201, 162, 39, 0.45);
+  transform: translateY(-50%);
+}
+.res b, .res small { font-family: var(--mono); }
+.res.res-warn { border-color: rgba(232, 200, 134, 0.55); background: rgba(232, 200, 134, 0.12); }
+.res.res-bad { border-color: rgba(239, 154, 154, 0.65); background: rgba(239, 154, 154, 0.14); }
+#eraBadge {
+  font-family: var(--serif);
+  letter-spacing: 0.6px;
+  background: linear-gradient(135deg, rgba(201, 162, 39, 0.32), rgba(201, 162, 39, 0.08));
+}
+#dateBox { font-family: var(--mono); }
+
+/* ===== Кнопки времени ===== */
+#timeBox {
+  background: rgba(20, 18, 16, 0.72);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+}
+@supports not ((backdrop-filter: blur(8px)) or (-webkit-backdrop-filter: blur(8px))) {
+  #timeBox { background: rgba(20, 18, 16, 0.94); }
+}
+#timeBox button { transition: background-color 0.15s ease, color 0.15s ease; }
+#timeBox button:hover { background: rgba(201, 162, 39, 0.18); }
+#timeBox button.active { background: var(--accent); color: #1c1608; }
+
+/* ===== Строка причин: цветовые уровни info/warn/bad ===== */
+.alert {
+  background: rgba(20, 18, 16, 0.88);
+  border: 1px solid rgba(201, 162, 39, 0.22);
+  border-left-width: 3px;
+}
+.alert.info { border-left-color: var(--accent); }
+.alert.warn { border-left-color: var(--warn); }
+.alert.bad { border-left-color: var(--bad); background: rgba(60, 24, 24, 0.55); }
+.alert.info b { color: var(--accent); }
+.alert.warn b { color: var(--warn); }
+
+/* ===== Всплывающая подсказка ===== */
+#tip { background: rgba(18, 16, 13, 0.97); }
+
+/* ===== Тосты: типы + полоска автоскрытия (2.8 с, как в hud.toast) ===== */
+.toast {
+  position: relative;
+  overflow: hidden;
+  background: rgba(20, 18, 16, 0.94);
+  border-radius: 10px;
+}
+.toast::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--accent);
+  transform-origin: left center;
+  animation: toastLife 2.8s linear forwards;
+}
+.toast.info::after { background: var(--accent); }
+.toast.warn::after { background: var(--warn); }
+.toast.bad::after { background: var(--bad); }
+.toast.good::after { background: var(--good); }
+@keyframes toastLife { to { transform: scaleX(0); } }
+
+/* ===== Боковая панель ===== */
+#sidePanel {
+  background: linear-gradient(180deg, rgba(24, 21, 17, 0.96), rgba(16, 14, 11, 0.96));
+  border-radius: 14px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
+}
+#sideTabs { border-bottom: 1px solid var(--gold-faint); }
+#sideTabs button {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.1px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+#sideTabs button:hover { color: var(--text); background: rgba(201, 162, 39, 0.07); }
+#sideTabs button.active {
+  color: var(--accent);
+  background: linear-gradient(180deg, transparent 60%, rgba(201, 162, 39, 0.1));
+  border-bottom-color: var(--accent);
+}
+
+/* карточки зданий: разделители вместо рамок */
+.card {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(201, 162, 39, 0.13);
+  border-radius: 0;
+  padding: 10px 8px;
+  transition: background-color 0.15s ease;
+}
+#sideContent .card:last-child, #sheetContent .card:last-child { border-bottom: none; }
+.card:hover { background: rgba(201, 162, 39, 0.06); }
+.card .ttl span { color: var(--text); }
+.card .cost { font-family: var(--mono); }
+.card.done-card { border-bottom-color: rgba(147, 222, 147, 0.25); }
+h4.group {
+  font-family: var(--serif);
+  border-bottom: 1px solid var(--gold-faint);
+  padding-bottom: 4px;
+}
+
+/* числа — моношрифтом */
+.kv span:last-child, .kv b, #logList .l-day, #victory .stats, .obj .mark { font-family: var(--mono); }
+
+/* ===== Нижний шит (телефон) ===== */
+#sheet {
+  border-radius: 20px 20px 0 0;
+  background: linear-gradient(180deg, rgba(32, 28, 22, 0.97), rgba(20, 18, 16, 0.97) 34px);
+  border-top: 1px solid rgba(201, 162, 39, 0.25);
+  box-shadow: 0 -10px 32px rgba(0, 0, 0, 0.5);
+  transition-duration: 0.18s;
+}
+#sheetHandle { padding: 9px 0 5px; }
+#sheetHandle::before {
+  width: 44px;
+  height: 5px;
+  background: rgba(236, 229, 211, 0.28);
+  border-radius: 999px;
+}
+#sheetTabs { border-top: 1px solid var(--gold-faint); }
+#sheetTabs button {
+  min-height: 48px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+#sheetTabs button.active { color: var(--accent); background: rgba(201, 162, 39, 0.09); }
+
+/* ===== Модалки и кнопки-плитки ===== */
+.modal-wrap { background: rgba(8, 6, 4, 0.72); }
+.mtabs button {
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 1px;
+  transition: color 0.15s ease;
+}
+.mtabs button:hover { color: var(--text); }
+.modal {
+  background: linear-gradient(180deg, rgba(26, 23, 18, 0.98), rgba(18, 16, 13, 0.98));
+  border-radius: 14px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(201, 162, 39, 0.25);
+}
+.modal h3 { font-family: var(--serif); letter-spacing: 1px; }
+.btn {
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(43, 37, 28, 0.85), rgba(26, 22, 17, 0.85));
+  border: 1px solid var(--panel-border);
+  letter-spacing: 0.3px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease,
+              background-color 0.15s ease, border-color 0.15s ease;
+}
+.btn.primary {
+  background: linear-gradient(180deg, #ddb645, #b78e1c);
+  color: #1c1608;
+  box-shadow: 0 2px 10px rgba(201, 162, 39, 0.25);
+}
+.btn.danger { background: rgba(80, 30, 30, 0.35); }
+@media (hover: hover) and (pointer: fine) {
+  .btn:not(:disabled):hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(201, 162, 39, 0.4);
+  }
+  .btn.primary:not(:disabled):hover { box-shadow: 0 10px 26px rgba(201, 162, 39, 0.35); }
+}
+.btn:not(:disabled):active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+/* ===== Стартовый экран ===== */
+#overlay {
+  background:
+    radial-gradient(120% 90% at 50% 115%, rgba(201, 162, 39, 0.1), transparent 55%),
+    linear-gradient(180deg, rgba(12, 10, 8, 0.66) 0%, rgba(12, 10, 8, 0.82) 100%),
+    radial-gradient(ellipse at 50% 30%, #292117 0%, #12100d 72%);
+}
+#overlay .art { opacity: 0.3; }
+#overlay h1 {
+  font-family: var(--serif);
+  font-weight: 700;
+  letter-spacing: clamp(8px, 1.6vw, 18px);
+  text-indent: clamp(8px, 1.6vw, 18px);
+  color: #dfb63e;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 0 46px rgba(201, 162, 39, 0.35);
+}
+#overlay .sub {
+  font-family: var(--serif);
+  font-style: italic;
+  letter-spacing: 0.6px;
+  color: var(--dim);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+#overlay .sub::before, #overlay .sub::after {
+  content: '';
+  width: 42px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold-line));
+}
+#overlay .sub::after { background: linear-gradient(270deg, transparent, var(--gold-line)); }
+#overlay .btns { gap: 12px; }
+#overlay .btn { min-height: 50px; font-size: 15px; }
+#overlay .credits { letter-spacing: 1px; text-transform: uppercase; font-size: 10px; }
+
+/* ===== Баннер эпохи ===== */
+#eraBanner .inner {
+  background: rgba(18, 16, 13, 0.9);
+  border-radius: 14px;
+  box-shadow: 0 0 0 4px rgba(201, 162, 39, 0.12), 0 24px 70px rgba(0, 0, 0, 0.6);
+}
+#eraBanner h2 { font-family: var(--serif); }
+
+/* ===== Прочее: цели, журнал, память, консоль, коуч ===== */
+.obj { border-bottom-color: rgba(201, 162, 39, 0.1); }
+.mem-row { background: rgba(236, 229, 211, 0.04); border-color: rgba(201, 162, 39, 0.15); }
+.relbar { background: rgba(236, 229, 211, 0.1); }
+#consoleBox { background: rgba(18, 16, 13, 0.97); }
+#coach { background: rgba(20, 18, 16, 0.97); }
+
+/* кнопки ✓/✗ на карте */
+#placeBar button { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+@media (hover: hover) and (pointer: fine) {
+  #placeBar button:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(0, 0, 0, 0.45); }
+}
+#placeOk { background: rgba(20, 30, 20, 0.92); }
+#placeCancel { background: rgba(30, 20, 20, 0.92); }
+
+/* прокрутка в тёплых тонах */
+#sideContent::-webkit-scrollbar, #sheetContent::-webkit-scrollbar,
+.modal::-webkit-scrollbar, #victory::-webkit-scrollbar { width: 8px; }
+#sideContent::-webkit-scrollbar-thumb, #sheetContent::-webkit-scrollbar-thumb,
+.modal::-webkit-scrollbar-thumb, #victory::-webkit-scrollbar-thumb {
+  background: rgba(201, 162, 39, 0.3);
+  border-radius: 4px;
+}
+
+/* клавиатурная навигация */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* уважение к reduced motion: гасим всё, что двигается */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .toast::after { animation: none; opacity: 0.6; }
+}
+
 </style>
 </head>
 <body>
@@ -2692,12 +2999,12 @@
     const globalMort = ctx.mortalityMult ?? 1;
     const hunger = (ctx.foodDays ?? 99) < 2 ? 3 : (ctx.foodDays ?? 99) < 5 ? 1.5 : 1;
     for (const v of alive2) {
-      const years2 = ageYears(v);
+      const years = ageYears(v);
       const trait = TRAIT_BY_ID[v.trait]?.mort ?? 1;
-      const q = annualMortality(years2) * trait * globalMort * hunger;
+      const q = annualMortality(years) * trait * globalMort * hunger;
       if (!rng.chance(q / YEAR)) continue;
       v.hp = 0;
-      const cause = years2 >= 55 ? "age" : years2 < ADULT_AGE ? "child" : "illness";
+      const cause = years >= 55 ? "age" : years < ADULT_AGE ? "child" : "illness";
       if (v.partner && byPid.has(v.partner)) {
         const p = byPid.get(v.partner);
         p.partner = null;
@@ -2736,12 +3043,12 @@
       if (w.sex !== "ж" || !w.partner) continue;
       const father = byPid.get(w.partner);
       if (!father || father.hp <= 0) continue;
-      const years2 = ageYears(w);
-      if (years2 < FERT_MIN || years2 > FERT_MAX) continue;
+      const years = ageYears(w);
+      if (years < FERT_MIN || years > FERT_MAX) continue;
       if (w.fertCd > 0) continue;
       if (pop >= cap) continue;
       const traitF = TRAIT_BY_ID[w.trait]?.fert ?? 1;
-      const p = BIRTH_BASE * ageFertility(years2) * cond * traitF;
+      const p = BIRTH_BASE * ageFertility(years) * cond * traitF;
       if (!rng.chance(p)) continue;
       const baby = _makeBaby(state, w, father, ctx, rng);
       villagers.push(baby);
@@ -2908,9 +3215,9 @@
     return v.sex === "ж" ? t.ruF : t.ru;
   }
   function villagerCard(v) {
-    const years2 = ageYears(v);
+    const years = ageYears(v);
     const lines = [
-      `${years2} ${plural2(years2, "год", "года", "лет")}, ${v.sex === "ж" ? "женщина" : "мужчина"}`,
+      `${years} ${plural2(years, "год", "года", "лет")}, ${v.sex === "ж" ? "женщина" : "мужчина"}`,
       `Ремесло: ${profTitle(v)}${v.rank ? ` (ранг ${v.rank}, +${Math.round(v.rank * RANK_BONUS * 100)}% к добыче)` : ""}`,
       `Характер: ${traitTitle(v)} — ${TRAIT_BY_ID[v.trait]?.desc ?? ""}`,
       v.partner ? "В паре" : g(v, "Холост", "Не замужем"),
@@ -2920,8 +3227,8 @@
     return { title: v.name, lines };
   }
   function obituary(v, cause = "age") {
-    const years2 = ageYears(v);
-    const yr = `${years2} ${plural2(years2, "год", "года", "лет")}`;
+    const years = ageYears(v);
+    const yr = `${years} ${plural2(years, "год", "года", "лет")}`;
     const died = g(v, "умер", "умерла");
     const how = cause === "age" ? `${died} от старости` : cause === "child" ? `${died} ${g(v, "ребёнком", "девочкой")}` : `${died} от болезни`;
     const parts = [`☠ ${v.name}, ${yr}, ${how}.`];
@@ -3008,17 +3315,17 @@
     if (rng) syncVillagers(state, villagers, rng);
     return state;
   }
-  function annualMortality(years2) {
-    if (years2 < 1) return 0.06;
-    if (years2 < 5) return 0.02;
-    if (years2 < 15) return 6e-3;
-    if (years2 < 45) return 5e-3;
-    if (years2 < 60) return 0.011;
-    return Math.min(0.85, 0.013 * Math.pow(2, (years2 - 60) / 8));
+  function annualMortality(years) {
+    if (years < 1) return 0.06;
+    if (years < 5) return 0.02;
+    if (years < 15) return 6e-3;
+    if (years < 45) return 5e-3;
+    if (years < 60) return 0.011;
+    return Math.min(0.85, 0.013 * Math.pow(2, (years - 60) / 8));
   }
-  function ageFertility(years2) {
-    if (years2 < 33) return 1;
-    if (years2 < 39) return 0.6;
+  function ageFertility(years) {
+    if (years < 33) return 1;
+    if (years < 39) return 0.6;
     return 0.25;
   }
   function birthConditions(ctx) {
@@ -3563,11 +3870,11 @@
     return html;
   }
   function _renderPerson(v, open) {
-    const years2 = ageYears(v);
+    const years = ageYears(v);
     const stars = "★".repeat(Math.min(3, v.rank || 0));
     const trait = traitTitle(v);
     const head2 = `<div class="ttl"><span>${v.sex === "ж" ? "♀" : "♂"} ${_esc(v.name)}</span>
-    <span class="cost">${years2} ${plural2(years2, "год", "года", "лет")}${stars ? ` ${stars}` : ""}</span></div>`;
+    <span class="cost">${years} ${plural2(years, "год", "года", "лет")}${stars ? ` ${stars}` : ""}</span></div>`;
     const line = `${_cap(profTitle(v))}${trait ? `, ${trait}` : ""} · ${doingNow(v)}`;
     if (!open) {
       const deed = v.deeds && v.deeds.length ? v.deeds[v.deeds.length - 1] : "";
@@ -5881,12 +6188,12 @@
     const out = [];
     if (!cands.length || max <= 0) return out;
     const start = rng ? rng.int(0, cands.length - 1) : 0;
-    let num15 = 1;
+    let num14 = 1;
     for (let k = 0; k < cands.length && out.length < max; k++) {
       const c = cands[(start + k) % cands.length];
       if (out.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < spacing)) continue;
       if (state.points.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < spacing)) continue;
-      out.push(addPoint(state, kind, c.x, c.y, `${POINT_KIND_RU[kind]} №${num15++}`));
+      out.push(addPoint(state, kind, c.x, c.y, `${POINT_KIND_RU[kind]} №${num14++}`));
     }
     return out;
   }
@@ -8920,9 +9227,9 @@
     let html = `<h4 class="group">Правитель</h4>`;
     if (!card) return html + `<div class="card"><div class="desc">Трон пуст.</div></div>`;
     const risk = rulerRisk(st);
-    const years2 = Math.max(0, Math.floor((sim2.day - (st.ruler.since || 0)) / 100));
+    const years = Math.max(0, Math.floor((sim2.day - (st.ruler.since || 0)) / 100));
     html += `<div class="card"><div class="ttl"><span>${card.title}</span><span class="cost">${card.age} лет</span></div>
-    <div class="desc">Правит ${years2} ${_plural2(years2, "год", "года", "лет")} · всего правителей сменилось: ${st.rulersCount}</div>`;
+    <div class="desc">Правит ${years} ${_plural2(years, "год", "года", "лет")} · всего правителей сменилось: ${st.rulersCount}</div>`;
     for (const t of card.traits) {
       const def = TRAIT_BY_ID3[t.id] || {};
       const eff = [];
@@ -13502,8 +13809,8 @@
     return m;
   }
   function strengthOf(scar, day, healK = 1) {
-    const years2 = Math.max(0, (day - scar.day) / YEAR2) * healK;
-    return scar.w * Math.pow(0.5, years2 / HALF_LIFE_YEARS);
+    const years = Math.max(0, (day - scar.day) / YEAR2) * healK;
+    return scar.w * Math.pow(0.5, years / HALF_LIFE_YEARS);
   }
   function forceOf(mem, kind, day, healK = 1) {
     const cap = KIND[kind] ? KIND[kind].cap : 1;
@@ -14312,1077 +14619,6 @@
     return Number.isFinite(v) ? v : def;
   }
 
-  // app/src/core/systems/link_dynasty.js
-  var YEAR5 = 100;
-  var ADULT_DAYS = 1600;
-  var ELDER_YEARS = 60;
-  var FERTILE_FROM = 1600;
-  var FERTILE_TO = 4500;
-  var MEMBER_CAP = 12;
-  var KIDS_PER_PAIR = 4;
-  var PRETENDER_CAP = 5;
-  var PLOT_CAP = 3;
-  var LEGIT_MIN = 0;
-  var LEGIT_MAX = 100;
-  var LEGIT_START = 55;
-  var LEGIT_DECAY = 0.02;
-  var LEGIT_THRONE_GAIN = 0.03;
-  var LEGIT_THRONE_CAP = 75;
-  var LEGIT_COURT_CAP = 82;
-  var LEGIT_PEOPLE_GAIN = 0.03;
-  var LEGIT_PEOPLE_CAP = 90;
-  var HAPPY_LEGIT_FROM = 60;
-  var COURT_GOLD = [0, 2, 5, 10];
-  var COURT_LEGIT = [0, 0.05, 0.09, 0.14];
-  var COURT_UNPAID_DROP = 0.12;
-  var HUNGER_DAYS_HURT = 3;
-  var HUNGER_DROP = 0.3;
-  var HUNGER_DROP_MAX = 0.5;
-  var LOST_LAND_DROP = 0.2;
-  var NO_HEIR_DROP = 0.15;
-  var HEIR_MINOR_DROP = 0.07;
-  var VALIANT_GAIN = 0.02;
-  var PRETENDER_PRESSURE = 0.05;
-  var PRETENDER_PRESSURE_CAP = 0.15;
-  var LOW_LEGIT_BELOW = 30;
-  var LOW_LEGIT_STAB = -0.2;
-  var VALIANT_LEGIT_CAP = 75;
-  var PRETENDER_LEGIT = 40;
-  var PRETENDER_CHANCE = 0.06;
-  var SUPPORT_MAX = 60;
-  var SUPPORT_GROW = 0.15;
-  var REVOLT_SUPPORT = 40;
-  var REVOLT_LEGIT = 25;
-  var REVOLT_CHANCE = 0.02;
-  var REVOLT_STAB_SHOCK2 = -8;
-  var REVOLT_LEGIT_DROP = 4;
-  var PLOT_CHANCE = 0.02;
-  var CLAIM_SUPPORT_MIN = 20;
-  var POISON_LEGIT_MAX = 50;
-  var SCANDAL_LEGIT_MAX = 60;
-  var CUNNING_EXPOSE_CHANCE = 0.01;
-  var EXPOSE_LEGIT_GAIN = 2;
-  var CLAIM_STAB_SHOCK = -6;
-  var CLAIM_LEGIT_DROP = 5;
-  var SCANDAL_LEGIT_DROP = 8;
-  var DESIGNATE_COST = 12;
-  var DESIGNATE_NOBLE_HIT = 4;
-  var MARRIAGE_GOLD = 40;
-  var MARRIAGE_REL = 25;
-  var MARRIAGE_LEGIT = 8;
-  var USURP_APPROVAL = 45;
-  var USURP_STAB_COST = 20;
-  var USURP_LEGIT = 25;
-  var USURP_NOBLE_HIT = 12;
-  var USURP_MILITARY_GAIN = 5;
-  var ADOPT_GOLD = 120;
-  var ADOPT_LEGIT = 35;
-  var INTERREG_AUTO_DAYS = 60;
-  var INTERREG_AUTO_LEGIT = 22;
-  var INTERREGNUM_STAB = -18;
-  var INTERREG_HAPPY = -3;
-  var EXPOSE_GOLD = 15;
-  var SUCCESSION_LEGIT_DROP = 8;
-  var BIRTH_CHANCE = 6e-3;
-  var CONFIRM_DAYS2 = 2;
-  var DYN_TRAITS = [
-    { id: "valiant", ru: "Доблестный" },
-    { id: "cunning", ru: "Хитроумный" },
-    { id: "pious", ru: "Набожный" },
-    { id: "beloved", ru: "Любимец двора" },
-    { id: "cruel", ru: "Жестокий" },
-    { id: "sickly", ru: "Болезненный" }
-  ];
-  var TRAIT_BY_ID4 = Object.fromEntries(DYN_TRAITS.map((t) => [t.id, t]));
-  var TRAIT_IDS = DYN_TRAITS.map((t) => t.id);
-  var PLOT_DEFS = {
-    claim: { ru: "Заговор претендента", need: [18, 36] },
-    poison: { ru: "Отравление наследника", need: [24, 48] },
-    scandal: { ru: "Дворцовый скандал", need: [14, 30] }
-  };
-  var SURNAME_A = ["Зор", "Вол", "Кам", "Сол", "Бел", "Чер", "Рат", "Мед", "Яр", "Стар", "Гол", "Тур"];
-  var SURNAME_B = ["инов", "ков", "ев", "инский", "цкий", "анин", "ов", "их"];
-  function houseName(rng) {
-    return rng.pick(SURNAME_A) + rng.pick(SURNAME_B);
-  }
-  function pickTraits(rng, n) {
-    const out = [];
-    let guard = 0;
-    while (out.length < n && guard++ < 30) {
-      const t = rng.pick(TRAIT_IDS);
-      if (!out.includes(t)) out.push(t);
-    }
-    return out;
-  }
-  function addMember(st, rng, opts = {}) {
-    const m = {
-      id: st.nextId++,
-      name: opts.name || rng.pick(NAMES),
-      age: opts.age != null ? opts.age : rng.int(ADULT_DAYS, 4200),
-      sex: opts.sex || (rng.chance(0.5) ? "м" : "ж"),
-      traits: opts.traits || pickTraits(rng, opts.traitCount || (rng.chance(0.4) ? 3 : 2)),
-      status: opts.status || "member",
-      alive: true,
-      deathDay: -1,
-      cause: "",
-      pairWith: null,
-      // id супруга внутри рода
-      kids: 0
-      // рождено детей в этом союзе
-    };
-    st.members.push(m);
-    return m;
-  }
-  function pairUp(a, b) {
-    a.pairWith = b.id;
-    b.pairWith = a.id;
-  }
-  function createDynasty(rng) {
-    const st = {
-      v: 1,
-      day: -1,
-      // защита от двойного хода в одни сутки
-      house: { name: houseName(rng), founder: "", generations: 1, throneDays: 0 },
-      members: [],
-      legitimacy: LEGIT_START,
-      court: 0,
-      // содержание двора 0..3
-      designated: null,
-      // назначенный наследник (вне закона строя)
-      heir: null,
-      // наследник по текущему расчёту
-      pretenders: [],
-      // {id, name, house, fid, support}
-      plots: [],
-      // {id, kind, days, need, by, targetId}
-      marriages: [],
-      // {fid, memberId, day} — запись же и есть claim чужого дома
-      interregnum: false,
-      interregnumDays: 0,
-      nextId: 1,
-      plotSeq: 1,
-      lastDelta: 0,
-      // дневное движение законности — для панели
-      lastReasons: [],
-      lastCourtPaid: true
-    };
-    const f = addMember(st, rng, { status: "ruler", sex: "м", age: rng.int(7e3, 11e3) });
-    st.house.founder = f.name;
-    const s = addMember(st, rng, { status: "spouse", sex: "ж", age: f.age - rng.int(0, 800) });
-    pairUp(f, s);
-    return st;
-  }
-  function emptyState() {
-    return {
-      v: 1,
-      day: -1,
-      house: { name: "", founder: "", generations: 1, throneDays: 0 },
-      members: [],
-      legitimacy: LEGIT_START,
-      court: 0,
-      designated: null,
-      heir: null,
-      pretenders: [],
-      plots: [],
-      marriages: [],
-      interregnum: false,
-      interregnumDays: 0,
-      nextId: 1,
-      plotSeq: 1,
-      lastDelta: 0,
-      lastReasons: [],
-      lastCourtPaid: true
-    };
-  }
-  function dynastyInstall(sim2) {
-    const rng = sim2.rng || createFallbackRng(sim2);
-    const st = createDynasty(rng);
-    const pr = sim2.politics && sim2.politics.state ? sim2.politics.state.ruler : null;
-    if (pr && pr.name) {
-      const f = st.members.find((m) => m.status === "ruler");
-      if (f) {
-        f.name = String(pr.name);
-        if (Number.isFinite(pr.age)) f.age = Math.round(clamp13(pr.age, 16, 90) * YEAR5);
-        st.house.founder = f.name;
-      }
-    }
-    sim2.linkDynasty = st;
-    return st;
-  }
-  function readGov(sim2) {
-    const g2 = sim2.politics && sim2.politics.state ? sim2.politics.state.gov : "chiefdom";
-    return typeof g2 === "string" && g2 ? g2 : "chiefdom";
-  }
-  function happyOf(sim2) {
-    if (Number.isFinite(sim2._happy)) return clamp13(sim2._happy, 0, 100);
-    if (typeof sim2.happiness === "function") return clamp13(sim2.happiness(), 0, 100);
-    return 50;
-  }
-  function lostLandToday(sim2) {
-    const t = sim2.linkTerritory;
-    return !!(t && numOf2(t.shock, 0) > 0);
-  }
-  function heirOf(st, gov) {
-    const ruler = livingRuler(st);
-    const alive2 = st.members.filter((m) => m.alive && (!ruler || m.id !== ruler.id));
-    if (!alive2.length) return null;
-    if (st.designated != null) {
-      const d = alive2.find((m) => m.id === st.designated);
-      if (d) return d;
-    }
-    const adults = alive2.filter((m) => m.age >= ADULT_DAYS);
-    const pool = adults.length ? adults : alive2;
-    switch (gov) {
-      case "monarchy": {
-        const sons = alive2.filter((m) => m.sex === "м").sort((a, b) => b.age - a.age);
-        if (sons.length) return sons[0];
-        const daughters = alive2.filter((m) => m.sex === "ж").sort((a, b) => b.age - a.age);
-        if (daughters.length) return daughters[0];
-        return pool.slice().sort((a, b) => b.age - a.age)[0];
-      }
-      case "empire":
-      case "federation":
-        return pool.slice().sort((a, b) => b.age - a.age)[0];
-      case "republic":
-        return null;
-      // выборы вне рода — модуль спит
-      case "chiefdom":
-      default:
-        return pool.slice().sort((a, b) => b.traits.length - a.traits.length || b.age - a.age)[0];
-    }
-  }
-  function memberById(st, id) {
-    return st.members.find((m) => m.id === id) || null;
-  }
-  function livingRuler(st) {
-    return st.members.find((m) => m.alive && m.status === "ruler") || null;
-  }
-  function hasLiving(st) {
-    return st.members.some((m) => m.alive);
-  }
-  function killMember(st, m, day, cause) {
-    m.alive = false;
-    m.deathDay = day;
-    m.cause = cause;
-    if (m.pairWith != null) {
-      const sp = memberById(st, m.pairWith);
-      if (sp) sp.pairWith = null;
-      m.pairWith = null;
-    }
-  }
-  function memberDeathChance(years2) {
-    if (years2 < 50) return 8e-5;
-    return Math.min(0.02, 3e-4 * Math.pow(2, (years2 - 50) / 8));
-  }
-  function emptyReport() {
-    return { mods: { happy: 0, stab: 0 }, reasons: [], events: [], flags: {} };
-  }
-  function dynastyNewDay(sim2) {
-    const rep = emptyReport();
-    const M = sim2 && sim2.linkDynasty ? sim2.linkDynasty : null;
-    if (!M) return rep;
-    if (!sim2.rng || M.day === sim2.day) {
-      rep.flags.state = M;
-      return rep;
-    }
-    const rng = sim2.rng;
-    const day = Math.max(0, Math.round(num12(sim2.day, 0)));
-    const gov = readGov(sim2);
-    const republic = gov === "republic";
-    const N = JSON.parse(JSON.stringify(M));
-    N.day = day;
-    N.lastDelta = 0;
-    N.lastReasons = [];
-    const fids = (Array.isArray(sim2.factions) ? sim2.factions : []).filter((f) => f && f.alive !== false).map((f) => f.id);
-    if (!republic && !N.interregnum && !livingRuler(N)) {
-      if (hasLiving(N)) {
-        const h = heirOf(N, gov);
-        if (h) {
-          h.status = "ruler";
-          rep.events.push({ text: `${h.name} принял власть: род ${N.house.name} снова при троне.`, type: "info" });
-          syncNewRuler(N, rep, h);
-        } else startInterregnum(N, rng, fids, rep, day);
-      } else {
-        foundHouse(N, rng, INTERREG_AUTO_LEGIT);
-        rep.events.push({ text: `Знать возвела новый род: ${N.house.name}.`, type: "warn", chronicle: true });
-        syncNewRuler(N, rep, livingRuler(N));
-      }
-    }
-    if (!republic && !N.interregnum) {
-      const reign = livingRuler(N);
-      const pr = sim2.politics && sim2.politics.state ? sim2.politics.state.ruler : null;
-      if (reign && pr && pr.name && pr.name !== reign.name) {
-        killMember(N, reign, day, "болезнь");
-        rep.events.push({ text: `✝ ${reign.name} из рода ${N.house.name} умер(ла).`, type: "warn" });
-        crownAfterDeath(N, gov, day, rng, fids, rep);
-      }
-    }
-    familyLife(N, rng, day, rep, gov, fids);
-    if (N.interregnum) {
-      N.interregnumDays++;
-      if (N.interregnumDays >= INTERREG_AUTO_DAYS) {
-        foundHouse(N, rng, INTERREG_AUTO_LEGIT);
-        rep.events.push({
-          text: `Междуцарствие кончилось: знать возвела род ${N.house.name}.`,
-          type: "warn",
-          chronicle: true
-        });
-        syncNewRuler(N, rep, livingRuler(N));
-      }
-    } else if (!republic && livingRuler(N)) {
-      N.house.throneDays++;
-      refreshHeir(N, gov);
-      courtDay(N, sim2, rep);
-      legitimacyDay(N, sim2, rep);
-      pretendersDay(N, rng, fids, rep);
-      plotsDay(N, rng, day, rep);
-    }
-    let hMod = 0;
-    if (N.interregnum) hMod += INTERREG_HAPPY;
-    else {
-      const rul = livingRuler(N);
-      if (rul) {
-        if (rul.traits.includes("cruel")) hMod -= 2;
-        if (rul.traits.includes("beloved")) hMod += 2;
-      }
-    }
-    rep.mods.happy += hMod;
-    rep.flags.state = N;
-    return rep;
-  }
-  function familyLife(N, rng, day, rep, gov, fids) {
-    for (const m of N.members.slice()) {
-      if (!m.alive) continue;
-      m.age += 1;
-      let p = memberDeathChance(m.age / YEAR5);
-      if (m.traits.includes("sickly")) p *= 1.6;
-      if (!rng.chance(p)) continue;
-      const yrs = Math.floor(m.age / YEAR5);
-      killMember(N, m, day, yrs >= ELDER_YEARS ? "старость" : "болезнь");
-      if (m.status === "ruler") {
-        rep.events.push({ text: `✝ ${m.name} из рода ${N.house.name} умер(ла) (${yrs} лет).`, type: "warn", chronicle: true });
-        if (gov !== "republic") crownAfterDeath(N, gov, day, rng, fids, rep);
-        else rep.events.push({ text: `В республике трон рода ${N.house.name} опустел.`, type: "info" });
-      } else {
-        rep.events.push({ text: `${m.name} из рода ${N.house.name} умер(ла) в ${yrs} лет (${m.cause}).`, type: "info" });
-      }
-    }
-    for (const m of N.members.slice()) {
-      if (!m.alive || m.pairWith == null || m.pairWith <= m.id) continue;
-      if (countLiving(N) >= MEMBER_CAP) break;
-      const sp = memberById(N, m.pairWith);
-      if (!sp || !sp.alive) continue;
-      const mother = m.sex === "ж" ? m : sp;
-      const father = m.sex === "ж" ? sp : m;
-      if (mother.sex !== "ж" || father.sex !== "м") continue;
-      if (mother.age < FERTILE_FROM || mother.age > FERTILE_TO) continue;
-      if (mother.kids >= KIDS_PER_PAIR || father.kids >= KIDS_PER_PAIR) continue;
-      if (!rng.chance(BIRTH_CHANCE)) continue;
-      mother.kids++;
-      father.kids++;
-      const child = addMember(N, rng, { age: 0, traitCount: 1 });
-      rep.events.push({ text: `У ${father.name} и ${mother.name} из рода ${N.house.name} родился ребёнок — ${child.name}.`, type: "good" });
-    }
-  }
-  function refreshHeir(N, gov) {
-    for (const m of N.members) if (m.alive && m.status === "heir") m.status = "member";
-    const h = heirOf(N, gov);
-    N.heir = h ? h.id : null;
-    if (h && h.status === "member") h.status = "heir";
-  }
-  function courtDay(N, sim2, rep) {
-    const cost = COURT_GOLD[clamp13(Math.round(num12(N.court, 0)), 0, 3)] || 0;
-    if (cost <= 0) {
-      N.lastCourtPaid = true;
-      return;
-    }
-    rep.flags.courtGold = cost;
-    const gold = numOf2(sim2.res && sim2.res.gold, 0);
-    N.lastCourtPaid = gold >= cost;
-  }
-  function legitimacyDay(N, sim2, rep) {
-    const L = N.legitimacy;
-    const rs = [];
-    let d = -LEGIT_DECAY;
-    if (L < LEGIT_THRONE_CAP) {
-      d += LEGIT_THRONE_GAIN;
-      rs.push(`годы на троне +${LEGIT_THRONE_GAIN}`);
-    }
-    if (N.court > 0) {
-      if (N.lastCourtPaid) {
-        if (L < LEGIT_COURT_CAP) {
-          d += COURT_LEGIT[N.court];
-          rs.push(`двор на содержании +${COURT_LEGIT[N.court]}`);
-        }
-      } else {
-        d -= COURT_UNPAID_DROP;
-        rs.push("казна не платит двору");
-      }
-    }
-    if (happyOf(sim2) >= HAPPY_LEGIT_FROM && L < LEGIT_PEOPLE_CAP) {
-      d += LEGIT_PEOPLE_GAIN;
-      rs.push(`народ доволен +${LEGIT_PEOPLE_GAIN}`);
-    }
-    const hd = sim2.linkSurvival ? Math.max(0, numOf2(sim2.linkSurvival.hungerDays, 0)) : 0;
-    if (hd >= HUNGER_DAYS_HURT) {
-      d -= Math.min(HUNGER_DROP_MAX, HUNGER_DROP * (hd - HUNGER_DAYS_HURT + 1));
-      rs.push(`голод (${hd} сут.) тяготит трон`);
-    }
-    if (lostLandToday(sim2)) {
-      d -= LOST_LAND_DROP;
-      rs.push("недавно потеряна земля");
-    }
-    const heir = N.heir != null ? memberById(N, N.heir) : null;
-    if (!heir) {
-      d -= NO_HEIR_DROP;
-      rs.push("наследника нет");
-    } else if (heir.age < ADULT_DAYS) {
-      d -= HEIR_MINOR_DROP;
-      rs.push("наследник малолетен");
-    }
-    if (N.pretenders.length && L < PRETENDER_LEGIT * 1.5) {
-      const press = Math.min(PRETENDER_PRESSURE_CAP, PRETENDER_PRESSURE * N.pretenders.length);
-      d -= press;
-      rs.push("претенденты точат репутацию рода");
-    }
-    const rul = livingRuler(N);
-    if (rul && rul.traits.includes("valiant") && L < VALIANT_LEGIT_CAP) {
-      d += VALIANT_GAIN;
-      rs.push("правитель доблестен");
-    }
-    N.lastDelta = round33(d);
-    N.lastReasons = rs;
-    N.legitimacy = clamp13(L + d, LEGIT_MIN, LEGIT_MAX);
-    if (N.court > 0 && !N.lastCourtPaid) rep.reasons.push("Казне нечем платить двору — двор ропщет");
-    if (rs.some((x) => x.startsWith("голод"))) rep.reasons.push("Род: голод тяготит трон");
-    if (lostLandToday(sim2)) rep.reasons.push("Род: свежая потеря земли мутит воду");
-    if (N.legitimacy < LOW_LEGIT_BELOW) {
-      rep.mods.stab += LOW_LEGIT_STAB;
-      rep.reasons.push(`Законность рода низка (${Math.round(N.legitimacy)}): порядок шатается`);
-    }
-  }
-  function spawnPretender(N, rng, fids) {
-    const marriedFids = N.marriages.map((x) => x.fid).filter(Boolean);
-    const fid = marriedFids.length && rng.chance(0.5) ? rng.pick(marriedFids) : fids.length ? rng.pick(fids) : null;
-    const p = {
-      id: N.nextId++,
-      name: rng.pick(NAMES),
-      house: houseName(rng),
-      fid,
-      support: round1(rng.range(8, 22))
-    };
-    N.pretenders.push(p);
-    return p;
-  }
-  function pretendersDay(N, rng, fids, rep) {
-    const L = N.legitimacy;
-    if (L < PRETENDER_LEGIT + 10) {
-      for (const p of N.pretenders) p.support = Math.min(SUPPORT_MAX, round1(p.support + SUPPORT_GROW));
-    }
-    if (N.pretenders.length < PRETENDER_CAP && L < PRETENDER_LEGIT && rng.chance(PRETENDER_CHANCE)) {
-      const p = spawnPretender(N, rng, fids);
-      rep.events.push({
-        text: `${p.name} из дома ${p.house} заявляет права на трон рода ${N.house.name}.`,
-        type: "warn"
-      });
-    }
-    for (const p of N.pretenders) {
-      if (p.support < REVOLT_SUPPORT || L >= REVOLT_LEGIT) continue;
-      if (!rng.chance(REVOLT_CHANCE)) continue;
-      N.pretenders = N.pretenders.filter((x) => x.id !== p.id);
-      N.legitimacy = clamp13(N.legitimacy - REVOLT_LEGIT_DROP, LEGIT_MIN, LEGIT_MAX);
-      rep.mods.stab += REVOLT_STAB_SHOCK2;
-      rep.events.push({
-        text: `⚔ ${p.name} из дома ${p.house} поднял знамя против рода ${N.house.name}: держава раскалывается.`,
-        type: "bad",
-        chronicle: true
-      });
-      break;
-    }
-  }
-  function eligiblePlotKinds(N) {
-    const kinds = [];
-    const heir = N.heir != null ? memberById(N, N.heir) : null;
-    if (heir && heir.alive && N.legitimacy < POISON_LEGIT_MAX) kinds.push("poison");
-    if (N.pretenders.some((p) => p.support >= CLAIM_SUPPORT_MIN)) kinds.push("claim");
-    if (N.court === 0 && N.legitimacy < SCANDAL_LEGIT_MAX) kinds.push("scandal");
-    return kinds;
-  }
-  function removePlot(N, p) {
-    N.plots = N.plots.filter((x) => x.id !== p.id);
-  }
-  function plotsDay(N, rng, day, rep) {
-    for (const p of N.plots.slice()) {
-      p.days += 1;
-      if (p.days < p.need) continue;
-      removePlot(N, p);
-      if (p.kind === "claim") {
-        rep.mods.stab += CLAIM_STAB_SHOCK;
-        N.legitimacy = clamp13(N.legitimacy - CLAIM_LEGIT_DROP, LEGIT_MIN, LEGIT_MAX);
-        rep.events.push({
-          text: `Заговор претендента созрел: имя рода ${N.house.name} облито грязью на площадях.`,
-          type: "bad",
-          chronicle: true
-        });
-      } else if (p.kind === "poison") {
-        const t = p.targetId != null ? memberById(N, p.targetId) : null;
-        if (t && t.alive) {
-          killMember(N, t, day, "отравление");
-          rep.events.push({
-            text: `☠ Наследник ${t.name} умер от яда. Кто-то очень хотел трона.`,
-            type: "bad",
-            chronicle: true
-          });
-        }
-      } else {
-        N.legitimacy = clamp13(N.legitimacy - SCANDAL_LEGIT_DROP, LEGIT_MIN, LEGIT_MAX);
-        rep.events.push({ text: `Дворцовый скандал выплеснулся на площади: род ${N.house.name} обсуждают все.`, type: "bad" });
-      }
-    }
-    const rul = livingRuler(N);
-    if (rul && rul.traits.includes("cunning") && N.plots.length && rng.chance(CUNNING_EXPOSE_CHANCE)) {
-      const p = N.plots[0];
-      removePlot(N, p);
-      N.legitimacy = clamp13(N.legitimacy + EXPOSE_LEGIT_GAIN, LEGIT_MIN, LEGIT_MAX);
-      rep.events.push({ text: `${rul.name} раскрыл «${PLOT_DEFS[p.kind].ru}» раньше срока — заговорщики бежали.`, type: "good" });
-    }
-    if (N.plots.length >= PLOT_CAP) return;
-    if (!rng.chance(PLOT_CHANCE)) return;
-    const kinds = eligiblePlotKinds(N);
-    if (!kinds.length) return;
-    const kind = rng.pick(kinds);
-    const def = PLOT_DEFS[kind];
-    const heir = kind === "poison" && N.heir != null ? memberById(N, N.heir) : null;
-    const plot = {
-      id: N.plotSeq++,
-      kind,
-      days: 0,
-      need: rng.int(def.need[0], def.need[1]),
-      by: rng.pick(NAMES),
-      targetId: heir ? heir.id : null
-    };
-    N.plots.push(plot);
-    rep.events.push({ text: `Ходят слухи: против рода ${N.house.name} зреет «${def.ru}».`, type: "warn" });
-  }
-  function crownAfterDeath(N, gov, day, rng, fids, rep) {
-    const h = heirOf(N, gov);
-    if (h) {
-      h.status = "ruler";
-      N.house.generations++;
-      N.legitimacy = clamp13(N.legitimacy - SUCCESSION_LEGIT_DROP, LEGIT_MIN, LEGIT_MAX);
-      rep.events.push({
-        text: `Корону рода ${N.house.name} принял ${h.name} (${Math.floor(h.age / YEAR5)} лет).`,
-        type: "warn",
-        chronicle: true
-      });
-      rep.reasons.push(`Смена правителя: законность −${SUCCESSION_LEGIT_DROP}`);
-      syncNewRuler(N, rep, h);
-    } else {
-      startInterregnum(N, rng, fids, rep, day);
-    }
-  }
-  function startInterregnum(N, rng, fids, rep, day) {
-    N.interregnum = true;
-    N.interregnumDays = 0;
-    N.designated = null;
-    N.heir = null;
-    rep.mods.stab += INTERREGNUM_STAB;
-    rep.events.push({
-      text: `☠ Род ${N.house.name} пресёкся: некому взять корону. Междуцарствие!`,
-      type: "bad",
-      chronicle: true
-    });
-    while (N.pretenders.length < Math.min(3, PRETENDER_CAP) && N.pretenders.length < PRETENDER_CAP) {
-      spawnPretender(N, rng, fids);
-    }
-    void day;
-  }
-  function foundHouse(N, rng, legit) {
-    N.house = { name: houseName(rng), founder: "", generations: 1, throneDays: 0 };
-    N.members = [];
-    N.nextId = 1;
-    const f = addMember(N, rng, { status: "ruler", sex: "м", age: rng.int(2800, 4500) });
-    N.house.founder = f.name;
-    const s = addMember(N, rng, { status: "spouse", sex: "ж", age: rng.int(ADULT_DAYS, 4200) });
-    pairUp(f, s);
-    N.legitimacy = legit;
-    N.designated = null;
-    N.heir = null;
-    N.pretenders = [];
-    N.plots = [];
-    N.marriages = [];
-    N.interregnum = false;
-    N.interregnumDays = 0;
-  }
-  function syncNewRuler(N, rep, m) {
-    const rul = m || livingRuler(N);
-    if (!rul) return;
-    rep.flags.newRuler = {
-      name: rul.name,
-      traits: rul.traits.slice(),
-      ageYears: Math.max(16, Math.floor(rul.age / YEAR5))
-    };
-  }
-  function countLiving(st) {
-    let n = 0;
-    for (const m of st.members) if (m.alive) n++;
-    return n;
-  }
-  function dynastyHappyMod(sim2) {
-    const L = sim2 && sim2.sys && sim2.sys.dynLinks;
-    return L ? numOf2(L.mods.happy, 0) : 0;
-  }
-  var SAVE_FIELDS = [
-    "v",
-    "day",
-    "house",
-    "members",
-    "legitimacy",
-    "court",
-    "designated",
-    "heir",
-    "pretenders",
-    "plots",
-    "marriages",
-    "interregnum",
-    "interregnumDays",
-    "nextId",
-    "plotSeq",
-    "lastDelta",
-    "lastReasons"
-  ];
-  function serializeDynasty(sim2) {
-    const s = sim2 && sim2.linkDynasty ? sim2.linkDynasty : null;
-    if (!s) return null;
-    const out = {};
-    for (const k of SAVE_FIELDS) {
-      if (s[k] === void 0) continue;
-      out[k] = typeof s[k] === "object" ? JSON.parse(JSON.stringify(s[k])) : s[k];
-    }
-    return out;
-  }
-  function restoreDynasty(sim2, data) {
-    const st = emptyState();
-    if (data && typeof data === "object") {
-      st.day = Math.round(num12(data.day, -1));
-      if (data.house && typeof data.house === "object") {
-        st.house = {
-          name: str(data.house.name),
-          founder: str(data.house.founder),
-          generations: Math.max(1, Math.round(num12(data.house.generations, 1))),
-          throneDays: Math.max(0, Math.round(num12(data.house.throneDays, 0)))
-        };
-      }
-      if (Array.isArray(data.members)) {
-        for (const raw of data.members) {
-          if (!raw || typeof raw !== "object") continue;
-          st.members.push({
-            id: Math.round(num12(raw.id, st.nextId++)),
-            name: str(raw.name),
-            age: Math.max(0, num12(raw.age, 0)),
-            sex: raw.sex === "ж" ? "ж" : "м",
-            traits: Array.isArray(raw.traits) ? raw.traits.filter((t) => TRAIT_BY_ID4[t]) : [],
-            status: ["ruler", "spouse", "heir", "member"].includes(raw.status) ? raw.status : "member",
-            alive: !!raw.alive,
-            deathDay: Math.round(num12(raw.deathDay, -1)),
-            cause: str(raw.cause),
-            pairWith: raw.pairWith == null ? null : Math.round(num12(raw.pairWith, -1)),
-            kids: Math.max(0, Math.round(num12(raw.kids, 0)))
-          });
-        }
-      }
-      st.nextId = Math.max(
-        Math.round(num12(data.nextId, 1)),
-        1,
-        ...st.members.map((m) => m.id + 1),
-        ...st.pretenders.map((p) => p.id + 1)
-      );
-      st.plotSeq = Math.max(Math.round(num12(data.plotSeq, 1)), 1, ...st.plots.map((p) => p.id + 1));
-      st.legitimacy = clamp13(num12(data.legitimacy, LEGIT_START), LEGIT_MIN, LEGIT_MAX);
-      st.court = clamp13(Math.round(num12(data.court, 0)), 0, 3);
-      st.designated = data.designated == null ? null : Math.round(num12(data.designated, -1));
-      st.heir = data.heir == null ? null : Math.round(num12(data.heir, -1));
-      if (Array.isArray(data.pretenders)) {
-        for (const p of data.pretenders) {
-          if (!p || typeof p !== "object") continue;
-          st.pretenders.push({
-            id: Math.round(num12(p.id, st.nextId++)),
-            name: str(p.name),
-            house: str(p.house),
-            fid: p.fid == null ? null : String(p.fid),
-            support: clamp13(num12(p.support, 10), 0, SUPPORT_MAX)
-          });
-        }
-      }
-      if (Array.isArray(data.plots)) {
-        for (const p of data.plots) {
-          if (!p || typeof p !== "object" || !PLOT_DEFS[p.kind]) continue;
-          st.plots.push({
-            id: Math.round(num12(p.id, st.plotSeq++)),
-            kind: p.kind,
-            days: Math.max(0, Math.round(num12(p.days, 0))),
-            need: Math.max(1, Math.round(num12(p.need, 24))),
-            by: str(p.by),
-            targetId: p.targetId == null ? null : Math.round(num12(p.targetId, -1))
-          });
-        }
-      }
-      if (Array.isArray(data.marriages)) {
-        for (const x of data.marriages) {
-          if (!x || typeof x !== "object") continue;
-          st.marriages.push({
-            fid: x.fid == null ? null : String(x.fid),
-            memberId: Math.round(num12(x.memberId, -1)),
-            day: Math.round(num12(x.day, 0))
-          });
-        }
-      }
-      st.interregnum = !!data.interregnum;
-      st.interregnumDays = Math.max(0, Math.round(num12(data.interregnumDays, 0)));
-      st.lastDelta = num12(data.lastDelta, 0);
-      if (Array.isArray(data.lastReasons)) st.lastReasons = data.lastReasons.map(str).filter(Boolean);
-    }
-    sim2.linkDynasty = st;
-    return st;
-  }
-  function handleDynastyAction(sim2, spec) {
-    const st = sim2 && sim2.linkDynasty;
-    if (!st) return { ok: false, reason: "Род ещё не основан" };
-    const parts = String(spec || "").split(":");
-    const rng = sim2.rng;
-    if (parts[0] === "court") {
-      const lvl = Math.round(Number(parts[1]));
-      if (!(lvl >= 0 && lvl <= 3)) return { ok: false, reason: "Неверный уровень содержания" };
-      st.court = lvl;
-      return { ok: true, text: lvl ? `Двор на содержании ${lvl}: −${COURT_GOLD[lvl]}🪙 в день` : "Двор урезан до необходимого", sound: "coin" };
-    }
-    if (parts[0] === "heir") {
-      const id = Math.round(Number(parts[1]));
-      const m = memberById(st, id);
-      if (!m || !m.alive) return { ok: false, reason: "Такого члена рода нет" };
-      const cur = st.heir != null ? memberById(st, st.heir) : null;
-      if (cur && cur.id === id) return { ok: false, reason: `${cur.name} и так наследник по закону` };
-      st.designated = id;
-      st.legitimacy = clamp13(st.legitimacy - DESIGNATE_COST, LEGIT_MIN, LEGIT_MAX);
-      shiftNobles(sim2, -DESIGNATE_NOBLE_HIT);
-      sim2.addLog(`Род: наследником вопреки обычаю назван ${m.name}. Знать ропщет.`, "warn");
-      return { ok: true, text: `${m.name} объявлен наследником (законность −${DESIGNATE_COST})`, sound: "click" };
-    }
-    if (parts[0] === "marry") {
-      const fid = parts[1];
-      const heir = st.heir != null ? memberById(st, st.heir) : null;
-      if (!heir) return { ok: false, reason: "Наследника нет" };
-      if (heir.age < ADULT_DAYS) return { ok: false, reason: "Наследник ещё ребёнок" };
-      if (st.marriages.some((x) => x.memberId === heir.id)) return { ok: false, reason: `${heir.name} уже женат (замужем)` };
-      const f = Array.isArray(sim2.factions) ? sim2.factions.find((x) => x.id === fid && x.alive !== false) : null;
-      if (!f) return { ok: false, reason: "Такого соседа нет" };
-      if ((sim2.wars || []).some((w) => w.fid === fid)) return { ok: false, reason: "С этим домом война — не до свадеб" };
-      if (Math.floor(numOf2(sim2.res && sim2.res.gold, 0)) < MARRIAGE_GOLD) return { ok: false, reason: `Нужно 🪙${MARRIAGE_GOLD} на свадьбу` };
-      sim2.res.gold -= MARRIAGE_GOLD;
-      st.marriages.push({ fid, memberId: heir.id, day: Math.max(0, Math.round(num12(sim2.day, 0))) });
-      st.legitimacy = clamp13(st.legitimacy + MARRIAGE_LEGIT, LEGIT_MIN, LEGIT_MAX);
-      if (typeof sim2.adjustRel === "function") sim2.adjustRel(fid, MARRIAGE_REL, "Брачный союз");
-      if (countLiving(st) < MEMBER_CAP) {
-        const sp = addMember(st, rng, {
-          status: "spouse",
-          sex: heir.sex === "м" ? "ж" : "м",
-          age: clamp13(heir.age + Math.round(rng.range(-600, 600)), ADULT_DAYS, FERTILE_TO)
-        });
-        pairUp(heir, sp);
-      }
-      sim2.addLog(`Род: ${heir.name} обвенчан(а) с домом «${factionName3(sim2, fid)}». Отношения укреплены.`, "good");
-      return { ok: true, text: `Брачный союз с «${factionName3(sim2, fid)}» (отношения +${MARRIAGE_REL})`, sound: "tech" };
-    }
-    if (parts[0] === "usurp") {
-      if (st.interregnum) return { ok: false, reason: "Трон и так пуст — просто воцарите новый дом" };
-      if (!sim2.politics || !sim2.politics.state) return { ok: false, reason: "Политика не подключена" };
-      const pst = sim2.politics.state;
-      if (avgApproval(pst) < USURP_APPROVAL) {
-        return { ok: false, reason: `Сословия не поддержат (среднее ${Math.round(avgApproval(pst))}, нужно ${USURP_APPROVAL})` };
-      }
-      const specStr = "usurp";
-      const ui = ensureUi(st);
-      if (ui.confirm !== specStr || Math.abs(numOf2(sim2.day, 0) - ui.confirmDay) > CONFIRM_DAYS2) {
-        ui.confirm = specStr;
-        ui.confirmDay = Math.max(0, Math.round(num12(sim2.day, 0)));
-        return { ok: true, text: "Переворот необратим: сословия отвернутся, порядок рухнет. Нажмите ещё раз.", confirm: true, sound: "click" };
-      }
-      ui.confirm = null;
-      const oldName = st.house.name;
-      pst.stability = clamp13(pst.stability - USURP_STAB_COST, 0, 100);
-      shiftFaction2(pst, "nobles", -USURP_NOBLE_HIT);
-      shiftFaction2(pst, "military", USURP_MILITARY_GAIN);
-      const oldRuler = livingRuler(st);
-      if (oldRuler) killMember(st, oldRuler, Math.max(0, Math.round(num12(sim2.day, 0))), "переворот");
-      foundHouse(st, rng, USURP_LEGIT);
-      const f = livingRuler(st);
-      pst.ruler = {
-        name: f.name,
-        age: Math.floor(f.age / YEAR5),
-        since: Math.max(0, Math.round(num12(sim2.day, 0))),
-        traits: mapRulerTraits(f.traits)
-      };
-      pst.rulersCount = Math.max(1, Math.round(num12(pst.rulersCount, 1)) + 1);
-      sim2.addLog(`⚔ ПЕРЕВОРОТ! Род ${oldName} свергнут. На троне новый дом — ${st.house.name}.`, "bad");
-      sim2.addChronicle(`Переворот: род ${oldName} пал, троном владеет ${st.house.name} (день ${Math.max(0, Math.round(num12(sim2.day, 0)))}).`);
-      if (typeof sim2.sfx === "function") sim2.sfx("alarm");
-      return { ok: true, text: `Новый род у власти: ${st.house.name}`, sound: "raid" };
-    }
-    if (parts[0] === "adopt") {
-      if (!st.interregnum) return { ok: false, reason: "Род ещё правит — воцарять некого" };
-      if (Math.floor(numOf2(sim2.res && sim2.res.gold, 0)) < ADOPT_GOLD) return { ok: false, reason: `Нужно 🪙${ADOPT_GOLD}, чтобы купить знать` };
-      sim2.res.gold -= ADOPT_GOLD;
-      const oldInter = st.interregnumDays;
-      foundHouse(st, rng, ADOPT_LEGIT);
-      const f = livingRuler(st);
-      if (sim2.politics && sim2.politics.state) {
-        sim2.politics.state.ruler = {
-          name: f.name,
-          age: Math.floor(f.age / YEAR5),
-          since: Math.max(0, Math.round(num12(sim2.day, 0))),
-          traits: mapRulerTraits(f.traits)
-        };
-      }
-      sim2.addLog(`Род: знать приняла новый дом ${st.house.name}. Междуцарствие кончилось (через ${oldInter} дн.).`, "good");
-      sim2.addChronicle(`На пустой трон возведён род ${st.house.name} (день ${Math.max(0, Math.round(num12(sim2.day, 0)))}).`);
-      return { ok: true, text: `Новый дом: ${st.house.name}`, sound: "era" };
-    }
-    if (parts[0] === "expose" || parts[0] === "pardon" || parts[0] === "execute") {
-      const id = Math.round(Number(parts[1]));
-      const p = st.plots.find((x) => x.id === id);
-      if (!p) return { ok: false, reason: "Такого заговора уже нет" };
-      removePlot(st, p);
-      if (parts[0] === "expose") {
-        if (Math.floor(numOf2(sim2.res && sim2.res.gold, 0)) < EXPOSE_GOLD) return { ok: false, reason: `Нужно 🪙${EXPOSE_GOLD} на соглядатаем` };
-        sim2.res.gold -= EXPOSE_GOLD;
-        st.legitimacy = clamp13(st.legitimacy + EXPOSE_LEGIT_GAIN, LEGIT_MIN, LEGIT_MAX);
-        sim2.addLog(`Род: заговор «${PLOT_DEFS[p.kind].ru}» раскрыт соглядатаями.`, "good");
-        return { ok: true, text: "Заговор раскрыт (законность +2)", sound: "coin" };
-      }
-      if (parts[0] === "pardon") {
-        st.legitimacy = clamp13(st.legitimacy - 3, LEGIT_MIN, LEGIT_MAX);
-        sim2.addLog(`Род: участников «${PLOT_DEFS[p.kind].ru}» отпустили с миром. Дворец шепчется о слабости.`, "warn");
-        return { ok: true, text: "Заговорщиков отпущено (законность −3)", sound: "click" };
-      }
-      st.legitimacy = clamp13(st.legitimacy + 5, LEGIT_MIN, LEGIT_MAX);
-      shiftNobles(sim2, 2);
-      shiftCommons(sim2, -3);
-      sim2.addLog(`Род: участники «${PLOT_DEFS[p.kind].ru}» казнены. Знать одобряет твёрдость, народ ужасается.`, "bad");
-      return { ok: true, text: "Казнь состоялась (законность +5)", sound: "deny" };
-    }
-    return { ok: false, reason: "Неизвестное действие рода" };
-  }
-  var TRAIT_TO_RULER = {
-    valiant: "warlord",
-    cunning: "trader",
-    pious: "just",
-    beloved: "beloved",
-    cruel: "cruel",
-    sickly: "weak"
-  };
-  function mapRulerTraits(dynTraits) {
-    const out = [];
-    for (const t of dynTraits) if (TRAIT_TO_RULER[t]) out.push(TRAIT_TO_RULER[t]);
-    return out.length ? out.slice(0, 3) : ["just"];
-  }
-  function shiftNobles(sim2, d) {
-    shiftFaction2(sim2.politics && sim2.politics.state, "nobles", d);
-  }
-  function shiftCommons(sim2, d) {
-    shiftFaction2(sim2.politics && sim2.politics.state, "commons", d);
-  }
-  function shiftFaction2(pst, id, d) {
-    if (!pst || !pst.factions || pst.factions[id] == null) return;
-    pst.factions[id] = clamp13(pst.factions[id] + d, 0, 100);
-  }
-  function factionName3(sim2, fid) {
-    const f = Array.isArray(sim2.factions) ? sim2.factions.find((x) => x.id === fid) : null;
-    return f && f.def && f.def.name || String(fid);
-  }
-  function ensureUi(st) {
-    if (!st.ui) st.ui = { confirm: null, confirmDay: -99 };
-    return st.ui;
-  }
-  function renderDynastyPanel(sim2) {
-    const st = sim2 && sim2.linkDynasty;
-    if (!st) {
-      return `<div class="card"><div class="ttl"><span>Род</span></div>
-      <div class="desc">Королевский род ещё не основан.</div></div>`;
-    }
-    const gov = readGov(sim2);
-    const inter = st.interregnum;
-    const L = Math.round(st.legitimacy);
-    const col = L >= 60 ? "var(--good)" : L >= 35 ? "var(--warn)" : "var(--bad)";
-    let html = `<h4 class="group">Королевский род</h4>`;
-    html += `<div class="card"><div class="ttl"><span>Дом ${esc(st.house.name)}</span>
-      <span class="cost">${inter ? "МЕЖДУЦАРСТВИЕ" : `поколений ${st.house.generations}`}</span></div>
-    <div class="relbar"><div style="width:${clamp13(L, 0, 100)}%;background:${col}"></div></div>
-    <div class="kv"><span>Законность</span><span style="color:${col}">${L} из 100
-      ${st.lastDelta ? `<i style="color:${st.lastDelta > 0 ? "var(--good)" : "var(--bad)"}">(${sign1(st.lastDelta)}/день)</i>` : ""}</span></div>`;
-    for (const r of (st.lastReasons || []).slice(0, 4)) html += `<div class="reason">${esc(r)}</div>`;
-    if (inter) {
-      html += `<div class="reason">Трон пуст уже ${st.interregnumDays} дн. Через ${Math.max(0, INTERREG_AUTO_DAYS - st.interregnumDays)} дн. знать сама возведёт новый дом.</div>`;
-    }
-    html += "</div>";
-    const rul = livingRuler(st);
-    if (rul) {
-      html += `<div class="card"><div class="ttl"><span>Правитель: ${esc(rul.name)}</span>
-        <span class="cost">${years(rul.age)} · на троне ${Math.floor(st.house.throneDays / YEAR5)} г.</span></div>
-      <div class="desc">${rul.traits.map((t) => traitRu(t)).join(", ") || "без особых черт"}</div></div>`;
-    }
-    const heir = st.heir != null ? memberById(st, st.heir) : null;
-    const govWord = { chiefdom: "сильнейший взрослый", monarchy: "старший сын", empire: "назначенный", federation: "совет старших", republic: "выборы вне рода" }[gov] || "по обычаю";
-    html += `<div class="card"><div class="ttl"><span>${inter ? "Престолонаследник" : "Наследник"}: ${heir ? esc(heir.name) : "нет"}</span>
-      <span class="cost">${heir ? years(heir.age) : govWord}</span></div>
-    <div class="desc">${gov === "republic" ? "В республике род у власти не стоит: выборы вне рода." : heir ? `Закон строя: ${govWord}.` : "Наследника нет — род стоит перед пресечением."}</div></div>`;
-    const alive2 = st.members.filter((m) => m.alive);
-    html += `<div class="card"><div class="ttl"><span>Живые рода</span><span class="cost">${alive2.length} из ${MEMBER_CAP}</span></div>`;
-    for (const m of alive2.slice(0, 8)) {
-      const mark = m.status === "ruler" ? "👑" : m.status === "heir" ? "▶" : m.status === "spouse" ? "⚭" : "·";
-      html += `<div class="kv"><span>${mark} ${esc(m.name)} (${m.sex === "ж" ? "♀" : "♂"})</span><span>${years(m.age)} · ${m.traits.map((t) => traitRu(t)).join(", ") || "—"}</span></div>`;
-    }
-    if (alive2.length > 8) html += `<div class="desc">…и ещё ${alive2.length - 8}</div>`;
-    html += "</div>";
-    const goldCost = COURT_GOLD[st.court] || 0;
-    html += `<h4 class="group">Двор</h4><div class="card">
-    <div class="kv"><span>Содержание</span><span>${goldCost ? `🪙${goldCost}/день ${st.lastCourtPaid ? "(платится)" : '<span style="color:var(--bad)">(казна пуста!)</span>'}` : "не содержится"}</span></div>
-    <div class="btns" style="display:flex;gap:6px;margin-top:8px">`;
-    for (let i = 0; i <= 3; i++) {
-      html += `<button class="btn ${st.court === i ? "primary" : ""}" style="flex:1;padding:6px;font-size:11px" data-dyn="court:${i}">${i}${COURT_GOLD[i] ? ` · 🪙${COURT_GOLD[i]}` : ""}</button>`;
-    }
-    html += `</div><div class="desc">Чем богаче двор, тем быстрее растёт законность (до ${LEGIT_COURT_CAP}). Пустая казна превращает двор в источник позора.</div></div>`;
-    if (st.pretenders.length) {
-      html += `<h4 class="group">Претенденты</h4><div class="card">`;
-      for (const p of st.pretenders) {
-        html += `<div class="kv"><span>${esc(p.name)} из дома ${esc(p.house)}${p.fid ? ` (союзник: ${esc(factionName3(sim2, p.fid))})` : ""}</span>
-        <span style="color:${p.support >= REVOLT_SUPPORT ? "var(--bad)" : "var(--warn)"}">поддержка ${Math.round(p.support)}</span></div>`;
-      }
-      html += `<div class="desc">Претенденты приходят при законности ниже ${PRETENDER_LEGIT}. Поддержка ${REVOLT_SUPPORT} при законности ${REVOLT_LEGIT} — мятеж.</div></div>`;
-    }
-    if (st.plots.length) {
-      html += `<h4 class="group">Интриги</h4><div class="card">`;
-      for (const p of st.plots) {
-        const pct = Math.round(p.days / Math.max(1, p.need) * 100);
-        html += `<div class="kv"><span>«${PLOT_DEFS[p.kind].ru}» (день ${p.days}/${p.need})</span><span>${pct}%</span></div>
-        <div class="relbar"><div style="width:${pct}%;background:var(--bad)"></div></div>
-        <div class="btns" style="display:flex;gap:6px;margin-top:6px">
-          <button class="btn" style="flex:1;padding:6px;font-size:11px" data-dyn="expose:${p.id}">Раскрыть 🪙${EXPOSE_GOLD}</button>
-          <button class="btn" style="flex:1;padding:6px;font-size:11px" data-dyn="pardon:${p.id}">Пощадить</button>
-          <button class="btn danger" style="flex:1;padding:6px;font-size:11px" data-dyn="execute:${p.id}">Казнить</button>
-        </div>`;
-      }
-      html += `</div>`;
-    }
-    html += `<h4 class="group">Решения</h4>`;
-    if (!inter && gov !== "republic") {
-      const candidates = alive2.filter((m) => m.id !== st.heir && m.age >= ADULT_DAYS);
-      if (candidates.length) {
-        html += `<div class="card"><div class="ttl"><span>Назначить наследника</span><span class="cost">законность −${DESIGNATE_COST}, знать −${DESIGNATE_NOBLE_HIT}</span></div>
-        <div class="btns" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">`;
-        for (const c of candidates.slice(0, 4)) {
-          html += `<button class="btn" style="flex:1;min-width:70px;padding:6px;font-size:11px" data-dyn="heir:${c.id}">${esc(c.name)}</button>`;
-        }
-        html += `</div><div class="desc">Воля правителя вместо закона строя: знать такое не прощает.</div></div>`;
-      }
-    }
-    if (!inter && gov !== "republic" && heir && heir.age >= ADULT_DAYS) {
-      const marriedIds = st.marriages.map((x) => x.memberId);
-      if (!marriedIds.includes(heir.id)) {
-        const fs = (Array.isArray(sim2.factions) ? sim2.factions : []).filter((f) => f && f.alive !== false);
-        if (fs.length) {
-          html += `<div class="card"><div class="ttl"><span>Женитьба наследника</span><span class="cost">🪙${MARRIAGE_GOLD} · отн. +${MARRIAGE_REL}</span></div>
-          <div class="btns" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">`;
-          for (const f of fs.slice(0, 4)) {
-            html += `<button class="btn" style="flex:1;min-width:80px;padding:6px;font-size:11px" data-dyn="marry:${f.id}">${esc(factionName3(sim2, f.id))}</button>`;
-          }
-          html += `</div><div class="desc">Союз укрепляет род (+${MARRIAGE_LEGIT} законности), но чужой дом получает права на трон.</div></div>`;
-        }
-      }
-    }
-    const avg = sim2.politics && sim2.politics.state ? Math.round(avgApproval(sim2.politics.state)) : 0;
-    if (!inter && sim2.politics) {
-      const can = avg >= USURP_APPROVAL;
-      html += `<div class="card ${can ? "" : "disabled"}"><div class="ttl"><span>Переворот</span><span class="cost">стабильность −${USURP_STAB_COST}</span></div>
-      <div class="desc">Свергнуть род и поставить новый: нужна поддержка сословий (сейчас ${avg}, нужно ${USURP_APPROVAL}). Новому дому достанется законность ${USURP_LEGIT}.</div>
-      ${can ? `<button class="btn danger" style="width:100%;margin-top:8px" data-dyn="usurp">Свергнуть род</button>` : `<div class="reason">Сословия не готовы: поднимите их одобрение.</div>`}</div>`;
-    }
-    if (inter) {
-      html += `<div class="card"><div class="ttl"><span>Воцарить новый дом</span><span class="cost">🪙${ADOPT_GOLD}</span></div>
-      <div class="desc">Купить поддержку знати сейчас: новый дом получит законность ${ADOPT_LEGIT}, не дожидаясь самовольного возведения (даст лишь ${INTERREG_AUTO_LEGIT}).</div>
-      <button class="btn primary" style="width:100%;margin-top:8px" data-dyn="adopt">Воцарить дом</button></div>`;
-    }
-    return html;
-  }
-  function bindDynastyPanel(root, sim2, opts = {}) {
-    if (!root || typeof root.querySelectorAll !== "function" || !sim2) return 0;
-    let bound = 0;
-    for (const el of Array.from(root.querySelectorAll("[data-dyn]"))) {
-      const spec = el.dataset && el.dataset.dyn || (typeof el.getAttribute === "function" ? el.getAttribute("data-dyn") : "");
-      el.onclick = () => {
-        const r = handleDynastyAction(sim2, spec);
-        if (!r.ok) {
-          if (opts.toast) opts.toast(r.reason, "warn");
-          if (opts.audio) opts.audio.play("deny");
-        } else {
-          if (opts.toast && r.text) opts.toast(r.text, r.confirm ? "warn" : "good");
-          if (opts.audio) opts.audio.play(r.sound || "click");
-        }
-        if (opts.refresh) opts.refresh();
-        return r;
-      };
-      bound++;
-    }
-    return bound;
-  }
-  function traitRu(id) {
-    return TRAIT_BY_ID4[id] ? TRAIT_BY_ID4[id].ru : id;
-  }
-  function years(ageDays) {
-    return `${Math.floor(ageDays / YEAR5)} лет`;
-  }
-  function sign1(v) {
-    return `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(2)}`;
-  }
-  function esc(s) {
-    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  }
-  function clamp13(v, lo, hi) {
-    return v < lo ? lo : v > hi ? hi : v;
-  }
-  function num12(v, def) {
-    return Number.isFinite(v) ? v : def;
-  }
-  function numOf2(v, def) {
-    return Number.isFinite(v) ? v : def;
-  }
-  function str(v) {
-    return typeof v === "string" ? v : "";
-  }
-  function round1(v) {
-    return Math.round(v * 10) / 10;
-  }
-  function round33(v) {
-    return Math.round(v * 1e3) / 1e3;
-  }
-  function createFallbackRng(sim2) {
-    const seed = sim2 && sim2.seed || 1;
-    let a = seed >>> 0;
-    const next = () => {
-      a |= 0;
-      a = a + 1831565813 | 0;
-      let t = Math.imul(a ^ a >>> 15, 1 | a);
-      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-      return ((t ^ t >>> 14) >>> 0) / 4294967296;
-    };
-    return {
-      next,
-      range: (min, max) => min + next() * (max - min),
-      int: (min, max) => Math.floor(min + next() * (max - min + 1)),
-      pick: (arr) => arr[Math.floor(next() * arr.length)],
-      chance: (p) => next() < p
-    };
-  }
-
   // app/src/core/systems/build2.js
   var TECH_BY_ID4 = Object.fromEntries(TECHS.map((t) => [t.id, t]));
   var QUEUE_MAX = 20;
@@ -15405,8 +14641,8 @@
   function restoreBuild(data) {
     const s = createBuild();
     if (!data || typeof data !== "object") return s;
-    s.day = num13(data.day, -1);
-    s.nextKey = Math.max(1, num13(data.nextKey, 1));
+    s.day = num12(data.day, -1);
+    s.nextKey = Math.max(1, num12(data.nextKey, 1));
     if (data.reserved && typeof data.reserved === "object") {
       for (const [r, v] of Object.entries(data.reserved)) {
         if (Number.isFinite(v) && v > 0) s.reserved[r] = v;
@@ -15416,13 +14652,13 @@
       for (const q of data.queue) {
         if (!q || !BUILDINGS[q.id]) continue;
         s.queue.push({
-          key: num13(q.key, s.nextKey++),
+          key: num12(q.key, s.nextKey++),
           id: q.id,
-          x: num13(q.x, 0) | 0,
-          y: num13(q.y, 0) | 0,
-          size: Math.max(1, num13(q.size, BUILDINGS[q.id].size || 1)),
-          prio: num13(q.prio, 0),
-          planned: num13(q.planned, 0)
+          x: num12(q.x, 0) | 0,
+          y: num12(q.y, 0) | 0,
+          size: Math.max(1, num12(q.size, BUILDINGS[q.id].size || 1)),
+          prio: num12(q.prio, 0),
+          planned: num12(q.planned, 0)
         });
       }
       if (s.queue.length > QUEUE_MAX) s.queue.length = QUEUE_MAX;
@@ -15526,12 +14762,12 @@
     }
     return n;
   }
-  function num13(v, def) {
+  function num12(v, def) {
     return Number.isFinite(v) ? v : def;
   }
 
   // app/src/core/systems/herds.js
-  var YEAR6 = DAYS_PER_SEASON * 4;
+  var YEAR5 = DAYS_PER_SEASON * 4;
   var WINTER = 3;
   var SEASON_FEED = [0.85, 1, 1.15, 0.5];
   function seasonFeed(sp, seasonIdx) {
@@ -15731,8 +14967,8 @@
   function restoreHerds(data) {
     const s = createHerds();
     if (!data || typeof data !== "object") return s;
-    s.day = num14(data.day, -1);
-    s.nextId = Math.max(1, Math.floor(num14(data.nextId, 1)));
+    s.day = num13(data.day, -1);
+    s.nextId = Math.max(1, Math.floor(num13(data.nextId, 1)));
     if (data.seen && typeof data.seen === "object") {
       for (const k of KINDS) if (data.seen[k]) s.seen[k] = true;
     }
@@ -15745,30 +14981,30 @@
     if (Array.isArray(data.hunts)) {
       for (const r of data.hunts) {
         if (!r || !SPECIES[r.kind]) continue;
-        s.hunts.push({ day: num14(r.day, 0), kind: r.kind, heads: Math.max(0, num14(r.heads, 0)) });
+        s.hunts.push({ day: num13(r.day, 0), kind: r.kind, heads: Math.max(0, num13(r.heads, 0)) });
       }
     }
     if (Array.isArray(data.herds)) {
       for (const h of data.herds) {
         if (!h || !SPECIES[h.kind]) continue;
-        const n = Math.max(0, num14(h.n, 0));
+        const n = Math.max(0, num13(h.n, 0));
         if (n < EXTINCT_AT) continue;
-        const id = Math.floor(num14(h.id, s.nextId));
+        const id = Math.floor(num13(h.id, s.nextId));
         const g2 = makeHerd(
           id,
           h.kind,
-          num14(h.cx, 0),
-          num14(h.cy, 0),
+          num13(h.cx, 0),
+          num13(h.cy, 0),
           n,
           typeof h.leader === "string" ? h.leader : LEADER_NAMES[0],
-          num14(h.since, 0)
+          num13(h.since, 0)
         );
-        g2.tx = num14(h.tx, g2.cx);
-        g2.ty = num14(h.ty, g2.cy);
-        g2.fear = clamp14(num14(h.fear, 0), 0, FEAR_MAX);
-        g2.lastHunt = num14(h.lastHunt, -9999);
+        g2.tx = num13(h.tx, g2.cx);
+        g2.ty = num13(h.ty, g2.cy);
+        g2.fear = clamp13(num13(h.fear, 0), 0, FEAR_MAX);
+        g2.lastHunt = num13(h.lastHunt, -9999);
         g2.doomed = !!h.doomed;
-        g2.wander = Math.max(0, num14(h.wander, 0));
+        g2.wander = Math.max(0, num13(h.wander, 0));
         s.herds.push(g2);
         s.seen[g2.kind] = true;
         if (id >= s.nextId) s.nextId = id + 1;
@@ -16118,8 +15354,8 @@
       };
     }
     const sp = SPECIES[h.kind];
-    const hunters = Math.max(1, Math.floor(num14(opts.hunters, 1)));
-    const skill = Math.max(0.1, num14(opts.skill, 1));
+    const hunters = Math.max(1, Math.floor(num13(opts.hunters, 1)));
+    const skill = Math.max(0.1, num13(opts.skill, 1));
     const wary = 1 - FEAR_YIELD * h.fear;
     let want = HUNT_BASE * driveBonus(h.n) * partyBonus(hunters) * skill * wary;
     const cap = Math.min(h.n, Math.max(HUNT_MIN_HEADS, h.n * HUNT_MAX_SHARE));
@@ -16216,8 +15452,8 @@
     const s = state && typeof state === "object" ? state : createHerds();
     return {
       v: 1,
-      day: num14(s.day, -1),
-      nextId: Math.max(1, Math.floor(num14(s.nextId, 1))),
+      day: num13(s.day, -1),
+      nextId: Math.max(1, Math.floor(num13(s.nextId, 1))),
       herds: Array.isArray(s.herds) ? s.herds.map((h) => ({ ...h })) : [],
       seen: { ...s.seen || {} },
       gone: { ...s.gone || {} },
@@ -16225,14 +15461,14 @@
       lastSaid: { ...s.lastSaid || {} }
     };
   }
-  function clamp14(v, lo, hi) {
+  function clamp13(v, lo, hi) {
     return v < lo ? lo : v > hi ? hi : v;
   }
   function clampInt(v, lo, hi) {
     const i = Math.floor(Number.isFinite(v) ? v : lo);
     return i < lo ? lo : i > hi ? hi : i;
   }
-  function num14(v, def) {
+  function num13(v, def) {
     return Number.isFinite(v) ? v : def;
   }
   function round29(v) {
@@ -16266,7 +15502,6 @@
     sim2.linkMemory = createMemory();
     sim2.linkIntel = createIntel();
     sim2.linkMasters = createMasters();
-    sim2.linkDynasty = dynastyInstall(sim2);
     sim2.linkGhost = createGhost();
     sim2.linkGhost.seed = sim2.seed | 0;
     sim2.build = createBuild();
@@ -16295,7 +15530,6 @@
     applyGhost(sim2);
     applyNeighborLinks(sim2);
     applyTerritoryLinks(sim2);
-    applyDynastyLinks(sim2);
     applyIntelLinks(sim2);
     const warOut = applyWarLinks(sim2);
     applyHerds(sim2);
@@ -16382,7 +15616,7 @@
   }
   function systemsHappyMod(sim2) {
     if (!sim2.sys) return 0;
-    return happyMod(sim2.sys.winter) + industryHappyMod(sim2) + politicsHappyMod(sim2) + (sim2.sys.ecoLinks ? sim2.sys.ecoLinks.mods.happy : 0) + survivalHappyMod(sim2) + industryLinkHappyMod(sim2) + (sim2.sys.nbrLinks ? sim2.sys.nbrLinks.mods.happy : 0) + memoryHappyMod(sim2) + territoryHappyMod(sim2) + (sim2.sys.warLinks ? sim2.sys.warLinks.mods.happy : 0) + dynastyHappyMod(sim2);
+    return happyMod(sim2.sys.winter) + industryHappyMod(sim2) + politicsHappyMod(sim2) + (sim2.sys.ecoLinks ? sim2.sys.ecoLinks.mods.happy : 0) + survivalHappyMod(sim2) + industryLinkHappyMod(sim2) + (sim2.sys.nbrLinks ? sim2.sys.nbrLinks.mods.happy : 0) + memoryHappyMod(sim2) + territoryHappyMod(sim2) + (sim2.sys.warLinks ? sim2.sys.warLinks.mods.happy : 0);
   }
   function systemsPopCapMod(sim2) {
     return sim2.linkTerritory ? territoryPopCap(sim2) : 0;
@@ -16413,8 +15647,7 @@
       masters: sim2.linkMasters || null,
       ghost: sim2.linkGhost || null,
       herds: serializeHerds(sim2.herds),
-      build: serializeBuild(sim2.build),
-      dyn: serializeDynasty(sim2)
+      build: serializeBuild(sim2.build)
     };
   }
   function systemsRestore(sim2, data) {
@@ -16437,7 +15670,6 @@
     sim2.linkGhost = restoreGhost(data.ghost);
     sim2.herds = restoreHerds(data.herds);
     sim2.build = restoreBuild(data.build);
-    if (data.dyn) restoreDynasty(sim2, data.dyn);
   }
   function applyEconomyLinks(sim2) {
     if (!sim2.politics || !sim2.industry) return null;
@@ -16740,36 +15972,6 @@
     for (const e of out.events) sim2.addLog(e.text, e.type);
     return out;
   }
-  function applyDynastyLinks(sim2) {
-    if (!sim2.linkDynasty) sim2.linkDynasty = dynastyInstall(sim2);
-    const rep = dynastyNewDay(sim2);
-    sim2.linkDynasty = rep.flags.state;
-    sim2.sys.dynLinks = rep;
-    if (rep.mods.stab !== 0 && sim2.politics && sim2.politics.state) {
-      const pst = sim2.politics.state;
-      pst.stability = Math.max(0, Math.min(100, pst.stability + rep.mods.stab));
-    }
-    if (rep.flags.courtGold > 0) {
-      sim2.res.gold = Math.max(0, sim2.res.gold - rep.flags.courtGold);
-    }
-    if (rep.flags.newRuler && sim2.politics && sim2.politics.state) {
-      const pst = sim2.politics.state;
-      pst.ruler = {
-        name: rep.flags.newRuler.name,
-        age: rep.flags.newRuler.ageYears,
-        since: sim2.day,
-        traits: rep.flags.newRuler.traits
-      };
-      pst.rulersCount = Math.max(1, (pst.rulersCount || 1) + 1);
-      sim2.addChronicle(`Власть у рода ${sim2.linkDynasty.house ? sim2.linkDynasty.house.name : ""}: правитель ${rep.flags.newRuler.name}.`);
-    }
-    for (const r of rep.reasons) sim2.addLog(r);
-    for (const e of rep.events) {
-      sim2.addLog(e.text, e.type === "good" ? "good" : e.type);
-      if (e.chronicle) sim2.addChronicle(e.text);
-    }
-    return rep;
-  }
   function applySurvivalLinks(sim2) {
     if (!sim2.linkSurvival) sim2.linkSurvival = createSurvivalMemory();
     const out = survivalLinks(sim2);
@@ -16812,8 +16014,7 @@
     industry: { render: renderIndustryPanel, bind: bindIndustryPanel },
     war: { render: renderPanel, bind: bindPanel },
     politics: { render: renderPoliticsPanel, bind: bindPoliticsPanel },
-    empire: { render: renderEmpirePanel, bind: bindEmpirePanel },
-    dynasty: { render: renderDynastyPanel, bind: bindDynastyPanel }
+    empire: { render: renderEmpirePanel, bind: bindEmpirePanel }
   };
 
   // app/src/core/simulation.js
@@ -18889,12 +18090,12 @@ ${s}`, "console");
     WETLAND: 9,
     ALPINE: 10
   };
-  var clamp15 = (v, a, b) => v < a ? a : v > b ? b : v;
+  var clamp14 = (v, a, b) => v < a ? a : v > b ? b : v;
   function temperature(lat, rel, n) {
-    return clamp15(1 - Math.pow(lat, 1.35) + n * 0.09 - rel * 0.3, 0, 1);
+    return clamp14(1 - Math.pow(lat, 1.35) + n * 0.09 - rel * 0.3, 0, 1);
   }
   function moisture(distSea, n) {
-    return clamp15(0.74 - Math.min(distSea, 18) * 0.03 + n * 0.45, 0, 1);
+    return clamp14(0.74 - Math.min(distSea, 18) * 0.03 + n * 0.45, 0, 1);
   }
 
   // app/src/render/landmarks.js
@@ -18977,7 +18178,7 @@ ${s}`, "console");
     dirt: "#7a6242"
     // вытоптанная земля вокруг
   };
-  var clamp16 = (v, a, b) => v < a ? a : v > b ? b : v;
+  var clamp15 = (v, a, b) => v < a ? a : v > b ? b : v;
   var c255 = (v) => v < 0 ? 0 : v > 255 ? 255 : v | 0;
   function mul(hex, k) {
     const c = hex2rgb(hex);
@@ -19405,7 +18606,7 @@ ${s}`, "console");
       const sp = Math.max(1e-4, hi - lo);
       for (let i = 0; i < N; i++) hgt[i] = (world.elev[i] - lo) / sp;
     } else if (height && height.length === N) {
-      for (let i = 0; i < N; i++) hgt[i] = clamp16((height[i] + 0.6) / 1.95, 0, 1);
+      for (let i = 0; i < N; i++) hgt[i] = clamp15((height[i] + 0.6) / 1.95, 0, 1);
     } else {
       for (let i = 0; i < N; i++) hgt[i] = H_BY_TILE[tiles[i]] ?? 0.2;
     }
@@ -19432,7 +18633,7 @@ ${s}`, "console");
           const i = y * W + x;
           const n1 = h3(x * 5, y * 5, 401) * 2 - 1;
           const n2 = h3(x * 3, y * 7, 909) * 2 - 1;
-          const rel = clamp16(hgt[i] - 0.2, 0, 1);
+          const rel = clamp15(hgt[i] - 0.2, 0, 1);
           const t = temperature(lat, rel, n1);
           const m = moisture(dsea[i], n2);
           biome[i] = classify(tiles[i], t, m, rel, river ? river[i] : 0, dsea[i]);
@@ -19463,8 +18664,8 @@ ${s}`, "console");
   }
   function count(f, name, x, y, r) {
     const W1 = f.W + 1;
-    const x0 = clamp16(x - r, 0, f.W), x1 = clamp16(x + r + 1, 0, f.W);
-    const y0 = clamp16(y - r, 0, f.H), y1 = clamp16(y + r + 1, 0, f.H);
+    const x0 = clamp15(x - r, 0, f.W), x1 = clamp15(x + r + 1, 0, f.W);
+    const y0 = clamp15(y - r, 0, f.H), y1 = clamp15(y + r + 1, 0, f.H);
     const T2 = f.sums[name];
     return T2[y1 * W1 + x1] - T2[y0 * W1 + x1] - T2[y1 * W1 + x0] + T2[y0 * W1 + x0];
   }
@@ -19544,7 +18745,7 @@ ${s}`, "console");
       if (f.slope[i] > 0.03) return 0;
       let around = 0, n = 0;
       for (let dy = -4; dy <= 4; dy += 2) for (let dx = -4; dx <= 4; dx += 2) {
-        const xx = clamp16(x + dx, 0, f.W - 1), yy = clamp16(y + dy, 0, f.H - 1);
+        const xx = clamp15(x + dx, 0, f.W - 1), yy = clamp15(y + dy, 0, f.H - 1);
         around += f.hgt[yy * f.W + xx];
         n++;
       }
@@ -26382,7 +25583,7 @@ ${s}`, "console");
   var UNDER_FLEX = [0.45, 0.55, 1.3, 0.75, 1, 0, 0, 0.85, 0];
   var KIND_TREE = 0;
   var KIND_UNDER = 1;
-  var clamp17 = (v, a, b) => v < a ? a : v > b ? b : v;
+  var clamp16 = (v, a, b) => v < a ? a : v > b ? b : v;
   var clamp013 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
   function makeRnd3(seed) {
     let s = seed | 0 || 625341585;
@@ -27219,7 +26420,7 @@ ${s}`, "console");
       this.ph = Math.ceil(H / S);
       const g2 = new Float32Array(this.pw * this.ph);
       const eraMul = [0.3, 0.42, 0.58, 0.7, 0.82, 0.92, 1, 0.98, 0.66, 0.4];
-      const em = eraMul[clamp17(sim2.eraIndex | 0, 0, 9)];
+      const em = eraMul[clamp16(sim2.eraIndex | 0, 0, 9)];
       const weightOf2 = (id) => {
         if (id === "lumber") return 1.25;
         if (id === "farm" || id === "pasture") return 0.85;
@@ -27256,7 +26457,7 @@ ${s}`, "console");
     }
     pressureAt(x, y) {
       if (!this.press) return 0;
-      const gx = clamp17(x >> 2, 0, this.pw - 1), gy = clamp17(y >> 2, 0, this.ph - 1);
+      const gx = clamp16(x >> 2, 0, this.pw - 1), gy = clamp16(y >> 2, 0, this.ph - 1);
       return clamp013(this.press[gy * this.pw + gx] + (noise2(x * 0.3, y * 0.3) - 0.5) * 0.22);
     }
     // =========================================================================
@@ -27275,7 +26476,7 @@ ${s}`, "console");
     }
     buildChunk(sim2, cx, cy) {
       const world = sim2.world, W = world.w, H = world.h;
-      const season = sim2.seasonIdx | 0, era = clamp17(sim2.eraIndex | 0, 0, 9);
+      const season = sim2.seasonIdx | 0, era = clamp16(sim2.eraIndex | 0, 0, 9);
       const D = this.q.detail;
       const items = [];
       const tile = (x, y) => x < 0 || y < 0 || x >= W || y >= H ? TILE.DEEP : world.tiles[y * W + x];
@@ -27506,7 +26707,7 @@ ${s}`, "console");
       if (!total) return;
       const cut = total > cap ? cap / total : 1;
       const stormK = sim2.weather === "storm" ? 1.7 : sim2.weather === "rain" ? 1.15 : 1;
-      const amp = (0.03 + 0.085 * Math.abs(this.wind)) * clamp17(this.gust, 0.2, 1.2) * stormK;
+      const amp = (0.03 + 0.085 * Math.abs(this.wind)) * clamp16(this.gust, 0.2, 1.2) * stormK;
       const dir = this.wind < 0 ? -1 : 1;
       const t = this.time;
       const m = typeof ctx.getTransform === "function" ? ctx.getTransform() : null;
@@ -27661,7 +26862,7 @@ ${s}`, "console");
   };
   var ISO_MAX_PX = 23;
   var ISO_FULL_PX = 13;
-  var clamp18 = (v, a, b) => v < a ? a : v > b ? b : v;
+  var clamp17 = (v, a, b) => v < a ? a : v > b ? b : v;
   var sstep2 = (a, b, x) => {
     const t = (x - a) / (b - a);
     return t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
@@ -27998,7 +27199,7 @@ ${s}`, "console");
       let top = 1e-3;
       for (let i = 0; i < N; i++) if (landK[i] > 0 && smooth3[i] > top) top = smooth3[i];
       for (let i = 0; i < N; i++) smooth3[i] /= top;
-      const R = clamp18(Math.round(Math.min(w, h) / 11), 3, 18);
+      const R = clamp17(Math.round(Math.min(w, h) / 11), 3, 18);
       const low = _ReliefLayer.boxBlur(Float32Array.from(smooth3), w, h, R, 2);
       const landSoft = _ReliefLayer.blur(Float32Array.from(landK), w, h, 1, null);
       const slopeT = new Float32Array(N);
@@ -28015,10 +27216,10 @@ ${s}`, "console");
       const lands = new Float32Array(nLand);
       for (let i = 0, k = 0; i < N; i++) if (landK[i] > 0) lands[k++] = slopeT[i];
       lands.sort();
-      const qAt = (q) => nLand ? lands[clamp18(Math.floor(q * (nLand - 1)), 0, nLand - 1)] : 0;
-      const c0 = clamp18(qAt(TUNE.cliffQ), TUNE.cliffMin, TUNE.cliffMax);
+      const qAt = (q) => nLand ? lands[clamp17(Math.floor(q * (nLand - 1)), 0, nLand - 1)] : 0;
+      const c0 = clamp17(qAt(TUNE.cliffQ), TUNE.cliffMin, TUNE.cliffMax);
       this.cliff0 = c0;
-      this.cliff1 = clamp18(Math.max(qAt(TUNE.cliffQFull), c0 * 1.7), c0 * 1.4, TUNE.cliffFull);
+      this.cliff1 = clamp17(Math.max(qAt(TUNE.cliffQFull), c0 * 1.7), c0 * 1.4, TUNE.cliffFull);
       const lapsArr = new Float32Array(nLand);
       for (let y = 0, k = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
@@ -28030,8 +27231,8 @@ ${s}`, "console");
         }
       }
       lapsArr.sort();
-      this.lapScale = clamp18(
-        nLand ? lapsArr[clamp18(Math.floor(TUNE.lapQ * (nLand - 1)), 0, nLand - 1)] : TUNE.lapMin,
+      this.lapScale = clamp17(
+        nLand ? lapsArr[clamp17(Math.floor(TUNE.lapQ * (nLand - 1)), 0, nLand - 1)] : TUNE.lapMin,
         TUNE.lapMin,
         TUNE.lapMax
       );
@@ -28042,8 +27243,8 @@ ${s}`, "console");
       this.txF = new Float32Array(SW);
       for (let sx = 0; sx < SW; sx++) {
         const u = (sx + 0.5) / S - 0.5, i0 = Math.floor(u);
-        this.txA[sx] = clamp18(i0, 0, w - 1);
-        this.txB[sx] = clamp18(i0 + 1, 0, w - 1);
+        this.txA[sx] = clamp17(i0, 0, w - 1);
+        this.txB[sx] = clamp17(i0 + 1, 0, w - 1);
         this.txF[sx] = u - i0;
       }
       const rowTmp = new Float32Array(SW * h);
@@ -28051,8 +27252,8 @@ ${s}`, "console");
         const row = y * w, out = y * SW;
         for (let sx = 0; sx < SW; sx++) {
           const i0 = tx.idx[sx], o = sx * 4;
-          const a = row + clamp18(i0 - 1, 0, w - 1), b = row + clamp18(i0, 0, w - 1);
-          const c = row + clamp18(i0 + 1, 0, w - 1), d = row + clamp18(i0 + 2, 0, w - 1);
+          const a = row + clamp17(i0 - 1, 0, w - 1), b = row + clamp17(i0, 0, w - 1);
+          const c = row + clamp17(i0 + 1, 0, w - 1), d = row + clamp17(i0 + 2, 0, w - 1);
           rowTmp[out + sx] = smooth3[a] * tx.wt[o] + smooth3[b] * tx.wt[o + 1] + smooth3[c] * tx.wt[o + 2] + smooth3[d] * tx.wt[o + 3];
         }
       }
@@ -28093,12 +27294,12 @@ ${s}`, "console");
       const end = Math.min(this.SH, upTo);
       for (let sy = this.Hrows; sy < end; sy++) {
         const j0 = ty.idx[sy], o = sy * 4;
-        const ra = clamp18(j0 - 1, 0, h - 1) * SW, rb = clamp18(j0, 0, h - 1) * SW;
-        const rc = clamp18(j0 + 1, 0, h - 1) * SW, rd = clamp18(j0 + 2, 0, h - 1) * SW;
+        const ra = clamp17(j0 - 1, 0, h - 1) * SW, rb = clamp17(j0, 0, h - 1) * SW;
+        const rc = clamp17(j0 + 1, 0, h - 1) * SW, rd = clamp17(j0 + 2, 0, h - 1) * SW;
         const out = sy * SW;
         const wy = sy * invS;
         const uy = (sy + 0.5) * invS - 0.5, jy = Math.floor(uy), fy = uy - jy;
-        const jA = clamp18(jy, 0, h - 1) * w, jB = clamp18(jy + 1, 0, h - 1) * w;
+        const jA = clamp17(jy, 0, h - 1) * w, jB = clamp17(jy + 1, 0, h - 1) * w;
         const txA = this.txA, txB = this.txB, txF = this.txF;
         for (let sx = 0; sx < SW; sx++) {
           let v = rowTmp[ra + sx] * ty.wt[o] + rowTmp[rb + sx] * ty.wt[o + 1] + rowTmp[rc + sx] * ty.wt[o + 2] + rowTmp[rd + sx] * ty.wt[o + 3];
@@ -28148,9 +27349,9 @@ ${s}`, "console");
         const lat = Math.abs((y + 0.5) / h * 2 - 1);
         for (let x = 0; x < w; x++) {
           const i = y * w + x;
-          const warm = temp ? clamp18(temp[i] + 0.3 * Math.max(0, Ht[i]), 0, 1) : clamp18(1 - Math.pow(lat, 1.35), 0, 1);
+          const warm = temp ? clamp17(temp[i] + 0.3 * Math.max(0, Ht[i]), 0, 1) : clamp17(1 - Math.pow(lat, 1.35), 0, 1);
           const n = ntAt(g2, x * 0.42 + oC, y * 0.42 + oC) - 0.5;
-          line[i] = clamp18(base * (0.49 + warm * 0.47) + n * 0.07, 0.05, 2);
+          line[i] = clamp17(base * (0.49 + warm * 0.47) + n * 0.07, 0.05, 2);
         }
       }
       this.snowH = line;
@@ -28263,7 +27464,7 @@ ${s}`, "console");
       const rowDnD = Math.min(SH - 1, sy + D) * SW;
       const wy = sy * invS;
       const uy = (sy + 0.5) * invS - 0.5, j0 = Math.floor(uy), fy = uy - j0;
-      const jA = clamp18(j0, 0, h - 1) * w, jB = clamp18(j0 + 1, 0, h - 1) * w;
+      const jA = clamp17(j0, 0, h - 1) * w, jB = clamp17(j0 + 1, 0, h - 1) * w;
       const txA = this.txA, txB = this.txB, txF = this.txF;
       let iA = 0, iB = 0, fx = 0;
       const bil = (arr) => {
@@ -28306,7 +27507,7 @@ ${s}`, "console");
         v += asp * T2.aspect;
         const cliff = sstep2(C0, C1, slopeW);
         if (cliff > 0.25) CNT.cliff++;
-        if (!simple) v -= clamp18(lap * T2.ledgeN, -0.9, 0.9) * (0.35 + 0.65 * cliff);
+        if (!simple) v -= clamp17(lap * T2.ledgeN, -0.9, 0.9) * (0.35 + 0.65 * cliff);
         cr = 0;
         cg = 0;
         cb = 0;
@@ -28328,7 +27529,7 @@ ${s}`, "console");
           over(T2.rockRGB[0], T2.rockRGB[1], T2.rockRGB[2], rockK * 0.55);
         }
         if (!simple && detail >= 1) {
-          const foot = clamp18(lap * T2.screeCurv, 0, 1) * sstep2(0.1, 0.24, hC) * sstep2(C0 * 0.38, C0 * 1.1, slopeW) * (1 - sstep2(C0 * 1.55, C1 * 1.15, slopeW));
+          const foot = clamp17(lap * T2.screeCurv, 0, 1) * sstep2(0.1, 0.24, hC) * sstep2(C0 * 0.38, C0 * 1.1, slopeW) * (1 - sstep2(C0 * 1.55, C1 * 1.15, slopeW));
           if (foot > 0.02) {
             if (foot > 0.15) CNT.scree++;
             const gc = Math.max(1, S / 3);
@@ -28404,28 +27605,28 @@ ${s}`, "console");
       if (!busy && this.job) this.step(this.job.first ? RELIEF_BUDGET.first : RELIEF_BUDGET.rebake);
       if (!this.base) return;
       const S = this.S, w = this.w, h = this.h;
-      const x0 = clamp18(Math.floor(-ox / z) - 1, 0, w);
-      const x1 = clamp18(Math.ceil((cw - ox) / z) + 1, 0, w);
-      const y0 = clamp18(Math.floor(-oy / z) - 1, 0, h);
-      const y1 = clamp18(Math.ceil((ch - oy) / z) + 1, 0, h);
+      const x0 = clamp17(Math.floor(-ox / z) - 1, 0, w);
+      const x1 = clamp17(Math.ceil((cw - ox) / z) + 1, 0, w);
+      const y0 = clamp17(Math.floor(-oy / z) - 1, 0, h);
+      const y1 = clamp17(Math.ceil((ch - oy) / z) + 1, 0, h);
       if (x1 <= x0 || y1 <= y0) return;
       const sx = x0 * S, sy = y0 * S, sw = (x1 - x0) * S, sh = (y1 - y0) * S;
       const dx = ox + x0 * z, dy = oy + y0 * z;
       const dw = (x1 - x0) * z, dh = (y1 - y0) * z;
       let k = 1;
       if (L && typeof L.mul === "number") {
-        const sun = clamp18((L.mul - 0.42) / 0.58, 0, 1);
-        k = clamp18(0.52 + sun * 0.5 + Math.sin(Math.PI * sun) * 0.3, 0.45, 1.16);
+        const sun = clamp17((L.mul - 0.42) / 0.58, 0, 1);
+        k = clamp17(0.52 + sun * 0.5 + Math.sin(Math.PI * sun) * 0.3, 0.45, 1.16);
       }
       ctx.save();
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "low";
-      ctx.globalAlpha = clamp18(0.72 + 0.28 * k, 0, 1);
+      ctx.globalAlpha = clamp17(0.72 + 0.28 * k, 0, 1);
       ctx.drawImage(this.base, sx, sy, sw, sh, dx, dy, dw, dh);
       this.drawn++;
       if (this.lite) {
         ctx.globalCompositeOperation = "lighter";
-        ctx.globalAlpha = clamp18(k, 0, 1);
+        ctx.globalAlpha = clamp17(k, 0, 1);
         ctx.drawImage(this.lite, sx, sy, sw, sh, dx, dy, dw, dh);
         ctx.globalCompositeOperation = "source-over";
         this.drawn++;
@@ -28547,7 +27748,7 @@ ${s}`, "console");
   var SELF_MIN_ZOOM = 0.75;
   var PAD = 0.055;
   var SPREAD_PAD = 0.45;
-  var clamp19 = (v, a, b) => v < a ? a : v > b ? b : v;
+  var clamp18 = (v, a, b) => v < a ? a : v > b ? b : v;
   var clamp014 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
   var smooth2 = (k) => k * k * (3 - 2 * k);
   var FALLBACK_Q = {
@@ -28723,8 +27924,8 @@ ${s}`, "console");
       const L = lightAt(t);
       const W = WEATHER_SHADOW[sim2.weather] || WEATHER_DEFAULT;
       const fog = opts && typeof opts.fog === "number" ? clamp014(opts.fog) : 0;
-      const len = clamp19(L.shadowLen, 0.45, 2.2);
-      const u = clamp19((t - 0.5) / ((DAY_B - DAY_A) / 2), -1, 1);
+      const len = clamp18(L.shadowLen, 0.45, 2.2);
+      const u = clamp18((t - 0.5) / ((DAY_B - DAY_A) / 2), -1, 1);
       const sun = sunAt(t) * W.a * (1 - 0.75 * fog);
       const dim = Math.min(1, 1.15 / (0.55 + 0.62 * len));
       const target = {
@@ -28784,7 +27985,7 @@ ${s}`, "console");
       const hf = spr.hFact || 0;
       if (hf < SELF_MIN_H) return;
       if (this.selfs >= this.maxSelf) return;
-      const band = clamp19(0.78 / hf, 0.32, 0.6);
+      const band = clamp18(0.78 / hf, 0.32, 0.6);
       const a = this._selfOf(spr.sil, dw, dh, band);
       if (!a) return;
       const mul2 = this._checkMul(ctx);
@@ -28890,8 +28091,8 @@ ${s}`, "console");
         this._self = /* @__PURE__ */ new WeakMap();
         this._bytes = 0;
       }
-      const w = clamp19(Math.round(dw), 12, 256);
-      const h = clamp19(Math.round(dh), 12, 384);
+      const w = clamp18(Math.round(dw), 12, 256);
+      const h = clamp18(Math.round(dh), 12, 384);
       s = bakeSoft(src, w, h, 1);
       this._bytes += s.bytes;
       this._soft.set(src, s);
@@ -28901,8 +28102,8 @@ ${s}`, "console");
       if (!src) return null;
       let s = this._self.get(src);
       if (s) return s;
-      const w = clamp19(Math.round(dw), 12, 256);
-      const h = clamp19(Math.round(dh), 12, 384);
+      const w = clamp18(Math.round(dw), 12, 256);
+      const h = clamp18(Math.round(dh), 12, 384);
       s = bakeSelfShade(src, w, h, band);
       this._bytes += s.bytes;
       this._self.set(src, s);
@@ -29063,7 +28264,7 @@ ${s}`, "console");
     first_frost: "vaporpuff",
     cold: "vaporpuff"
   };
-  var clamp20 = (v, a, b) => v < a ? a : v > b ? b : v;
+  var clamp19 = (v, a, b) => v < a ? a : v > b ? b : v;
   var clamp015 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
   function makeRnd5(seed) {
     let s = seed | 0 || 1831565813;
@@ -29579,7 +28780,7 @@ ${s}`, "console");
     _tickMeteor(e, dt, dens) {
       if (this.night < 0.18) return;
       if (!this.cw) return;
-      e.acc += (e.d.rate || 2.2) * dt * clamp20(dens, 0.4, 1);
+      e.acc += (e.d.rate || 2.2) * dt * clamp19(dens, 0.4, 1);
       while (e.acc >= 1) {
         e.acc--;
         const m = take(this.meteors);
@@ -29681,7 +28882,7 @@ ${s}`, "console");
       this.forges.length = 0;
       const list = sim2.buildings;
       if (!Array.isArray(list)) return;
-      const crowd = clamp20(10 / Math.max(1, this._smokers || 1), 0.4, 1);
+      const crowd = clamp19(10 / Math.max(1, this._smokers || 1), 0.4, 1);
       const dens = this._density();
       const workSmoke = dens > 0 && !this.off;
       let smokers = 0;
@@ -30054,7 +29255,7 @@ ${s}`, "console");
         const rise = l.rise * (1 - (1 - k) * (1 - k));
         const sx = ox + l.x * z, sy = oy + (l.y - rise) * z;
         if (sx < -80 || sy < -40 || sx > cw + 80 || sy > ch + 40) continue;
-        const px = Math.round(clamp20(z * (l.big ? 0.55 : 0.42), l.big ? 14 : 11, l.big ? 34 : 24));
+        const px = Math.round(clamp19(z * (l.big ? 0.55 : 0.42), l.big ? 14 : 11, l.big ? 34 : 24));
         ctx.font = `bold ${px}px system-ui, "Segoe UI", sans-serif`;
         ctx.globalAlpha = k < 0.1 ? k / 0.1 : k > 0.6 ? (1 - k) / 0.4 : 1;
         ctx.lineWidth = Math.max(2, px * 0.22);
@@ -30138,7 +29339,7 @@ ${s}`, "console");
     _seedStars() {
       const p = this.stars;
       p.n = 0;
-      const want = Math.round(FX_LIMITS.star * clamp20(this._density(), 0.3, 1));
+      const want = Math.round(FX_LIMITS.star * clamp19(this._density(), 0.3, 1));
       for (let i = 0; i < want; i++) {
         const s = take(p);
         if (!s) break;
@@ -33117,8 +32318,6 @@ ${s}`, "console");
     { id: "war", ru: "Война", ic: "🛡" },
     { id: "politics", ru: "Держава", ic: "⚖" },
     { id: "empire", ru: "Города", ic: "🏛" },
-    // Род при троне: династия, наследники и законность — решения игрока про власть.
-    { id: "dynasty", ru: "Род", ic: "👑" },
     { id: "labor", ru: "Труд", ic: "👷" },
     { id: "goals", ru: "Цели", ic: "🎯" },
     // Летопись — не архив, а действующая механика: что народ помнит, тем и
@@ -34100,9 +33299,6 @@ ${out}`;
     }
     panel_empire() {
       return PANELS.empire.render(this.sim);
-    }
-    panel_dynasty() {
-      return renderDynastyPanel(this.sim);
     }
     panel_memory() {
       const s = this.sim;
@@ -36396,7 +35592,8 @@ ${out}`;
       clampCam();
     }
     if (!sim.paused) {
-      sim.tick(dtReal / DAY_SECONDS * hud.speed);
+      const spd = hud.speed === 1 ? 0.5 : hud.speed;
+      sim.tick(dtReal / DAY_SECONDS * spd);
     }
     hudTimer += dtReal;
     if (hudTimer > 0.25) {
