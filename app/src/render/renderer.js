@@ -17,6 +17,7 @@ import { FxLayer } from './fx.js';
 import { SelectLayer } from './select.js';
 import { IconLayer } from './icons.js';
 import { CityLights } from './city_lights.js';
+import { MinimapLayer } from './minimap.js';
 import { lightAt, hash2 } from './palette.js';
 
 const TILE_PX = 32; // мировая единица «тайл→экран» при zoom=1 — НЕ зависит от пресета графики
@@ -59,6 +60,7 @@ export class Renderer {
     this.select = new SelectLayer(this.quality);       // наведение и выделение
     this.icons = new IconLayer(this.quality);          // значки состояния
     this.cityLights = new CityLights(this.quality);    // окна и фонари ночью
+    this.minimap = new MinimapLayer(this.quality);     // выпеченная миникарта + тревоги
   }
 
   // id ∈ QUALITY_ORDER или 'auto'
@@ -257,9 +259,13 @@ export class Renderer {
     if (this.quality.vignette) this.drawVignette(ctx, cw, ch);
     if (this.quality.grain > 0) this.drawGrain(ctx, cw, ch);
 
-    // --- миникарта (без пост-эффектов) ---
+    // --- всплывающие подписи поверх сцены, затем миникарта ---
     this.fx.drawLabels(ctx, ox, oy, z, cw, ch);
-    this.drawMinimap(sim, ctx, cw, ch);
+    // Миникарта: выпекается в offscreen, в кадре — один блит + рамка
+    // обзора + тревоги. rect отдаётся наружу (main.js/coach.js читают
+    // this.minimapRect: тап-прыжок и подсветка).
+    this.minimapRect = this.minimap.draw(sim, ctx, cw, ch,
+      { time: this.time, cam: this.cam, tilePx: TILE_PX });
   }
 
   // ---------------------------------------------------------------------
@@ -281,7 +287,8 @@ export class Renderer {
     this.select.setQuality(this.quality);
     this.icons.setQuality(this.quality);
     this.cityLights.setQuality(this.quality);
-      this.dpr = Math.min(this.quality.maxDpr, window.devicePixelRatio || 1);
+    this.minimap.setQuality(this.quality);
+    this.dpr = Math.min(this.quality.maxDpr, window.devicePixelRatio || 1);
       this.resize();
     }
   }
@@ -998,58 +1005,4 @@ export class Renderer {
     }
   }
 
-  drawMinimap(sim, ctx, cw, ch) {
-    const MW = 120, MH = 120;
-    // Правый край занимает #sidePanel (шириной 330 плюс отступ). Мини-карта
-    // стояла вплотную к краю окна и на десктопе целиком уходила под панель:
-    // рендер выпекал её каждый кадр и выбрасывал. Отступаем на ширину панели,
-    // но только когда та реально показана — на узком экране она скрыта.
-    const panelW = cw > 820 ? 338 : 10;   // 320 ширина панели + 8 отступ справа + 10 зазор
-    const mx = cw - MW - panelW, my = ch - MH - 10;
-    ctx.fillStyle = 'rgba(10,14,24,0.75)';
-    ctx.fillRect(mx - 3, my - 3, MW + 6, MH + 6);
-    if (!this._miniCache || this._miniSeason !== sim.seasonIdx || this._miniSeed !== sim.world.seed) {
-      const mc = document.createElement('canvas');
-      mc.width = MW; mc.height = MH;
-      const mctx = mc.getContext('2d');
-      const scale = MW / sim.world.w;
-      const img = mctx.createImageData(MW, MH);
-      // используем terrain.low (уже посчитан со светом) — просто уменьшаем выборкой
-      this.terrain.ensure(sim);
-      const low = this.terrain.low;
-      const lctx = low.getContext('2d');
-      const src = lctx.getImageData(0, 0, low.width, low.height).data;
-      const S = low.width / sim.world.w;
-      for (let y = 0; y < MH; y++) {
-        for (let x = 0; x < MW; x++) {
-          const wx = Math.min(low.width - 1, Math.floor(x / scale * S));
-          const wy = Math.min(low.height - 1, Math.floor(y / scale * S));
-          const si = (wy * low.width + wx) * 4;
-          const di = (y * MW + x) * 4;
-          img.data[di] = src[si]; img.data[di + 1] = src[si + 1]; img.data[di + 2] = src[si + 2]; img.data[di + 3] = 255;
-        }
-      }
-      mctx.putImageData(img, 0, 0);
-      this._miniCache = mc; this._miniSeason = sim.seasonIdx; this._miniSeed = sim.world.seed;
-    }
-    ctx.drawImage(this._miniCache, mx, my, MW, MH);
-    const scale = MW / sim.world.w;
-    ctx.fillStyle = '#c9a227';
-    for (const b of sim.buildings) if (!b.destroyed) ctx.fillRect(mx + b.x * scale - 1, my + b.y * scale - 1, 3, 3);
-    for (const f of sim.factions) {
-      if (!f.alive) continue;
-      ctx.fillStyle = f.def.color;
-      for (const s of f.settlements) {
-        ctx.beginPath(); ctx.arc(mx + s.x * scale, my + s.y * scale, s.capital ? 3.5 : 2, 0, 7); ctx.fill();
-      }
-    }
-    const vx = mx + (this.cam.x - (this.canvas.width / this.dpr) / 2 / (TILE_PX * this.cam.zoom)) * scale;
-    const vy = my + (this.cam.y - (this.canvas.height / this.dpr) / 2 / (TILE_PX * this.cam.zoom)) * scale;
-    const vw = (this.canvas.width / this.dpr) / (TILE_PX * this.cam.zoom) * scale;
-    const vh = (this.canvas.height / this.dpr) / (TILE_PX * this.cam.zoom) * scale;
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(vx, vy, vw, vh);
-    this.minimapRect = { x: mx, y: my, w: MW, h: MH, scale };
-  }
 }
