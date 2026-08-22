@@ -2956,6 +2956,55 @@
     out.pairs = Math.floor(out.pairs / 2);
     return out;
   }
+  function serialize(state, villagers) {
+    return {
+      state: JSON.parse(JSON.stringify(state)),
+      people: villagers.filter((v) => v.hp > 0).map((v) => ({
+        pid: v.pid,
+        sex: v.sex,
+        fam: v.fam,
+        trait: v.trait,
+        partner: v.partner,
+        children: v.children,
+        exp: v.exp,
+        prof: v.prof,
+        rank: v.rank,
+        fertCd: v.fertCd,
+        deeds: v.deeds,
+        parents: v.parents
+      }))
+    };
+  }
+  function deserialize(data, villagers, rng) {
+    if (!data || !data.state) {
+      const st = createPopulation(rng || { pick: (a) => a[0] });
+      if (rng) syncVillagers(st, villagers, rng);
+      return st;
+    }
+    const state = JSON.parse(JSON.stringify(data.state));
+    const people = data.people || [];
+    for (let i = 0; i < villagers.length; i++) {
+      const rec = people[i];
+      if (!rec) continue;
+      Object.assign(villagers[i], {
+        pid: rec.pid,
+        sex: rec.sex,
+        fam: rec.fam,
+        trait: rec.trait,
+        partner: rec.partner,
+        children: rec.children || 0,
+        exp: rec.exp || {},
+        prof: rec.prof || null,
+        rank: rec.rank || 0,
+        fertCd: rec.fertCd || 0,
+        deeds: rec.deeds || [],
+        parents: rec.parents,
+        wprof: null
+      });
+    }
+    if (rng) syncVillagers(state, villagers, rng);
+    return state;
+  }
   function annualMortality(years) {
     if (years < 1) return 0.06;
     if (years < 5) return 0.02;
@@ -3179,6 +3228,36 @@
     for (const v of villagers) {
       if (v.partner && !alive2.has(v.partner)) v.partner = null;
     }
+  }
+  function wirePopulationSerialize(sim2) {
+    if (!sim2 || !sim2.pop) return null;
+    const w = _wire(sim2);
+    return {
+      ver: 1,
+      pop: serialize(sim2.pop, sim2.villagers),
+      obits: w.obits.slice(-OBIT_KEEP),
+      arrived: w.arrived,
+      invited: w.invited,
+      declined: w.declined,
+      last: { ...w.last }
+    };
+  }
+  function wirePopulationRestore(sim2, data) {
+    if (!sim2) return;
+    sim2.popWire = createWireState();
+    if (!data) {
+      sim2.pop = createPopulation(sim2.rng);
+      syncVillagers(sim2.pop, sim2.villagers, sim2.rng);
+      return;
+    }
+    sim2.villagers = sim2.villagers.filter((v) => v.hp > 0);
+    sim2.pop = deserialize(data.pop, sim2.villagers, sim2.rng);
+    const w = sim2.popWire;
+    w.obits = Array.isArray(data.obits) ? data.obits.slice(-OBIT_KEEP) : [];
+    w.arrived = data.arrived || 0;
+    w.invited = data.invited || 0;
+    w.declined = data.declined || 0;
+    if (data.last) w.last = { ...w.last, ...data.last };
   }
   function inviteCost(sim2) {
     return Math.round(INVITE_BASE + INVITE_PER_POP * aliveCount(sim2));
@@ -15244,7 +15323,7 @@
       winter: serializeWinter(sim2.sys.winter),
       borders: serializeBorders(sim2.sys.borders),
       civ: serializeCivAi(sim2.sys.civ),
-      pop: void 0 ? (void 0)(sim2) : null,
+      pop: wirePopulationSerialize(sim2),
       ind: industrySerialize(sim2),
       war: serialize2(sim2),
       pol: politicsSerialize(sim2),
@@ -15266,7 +15345,7 @@
     if (data.winter) sim2.sys.winter = deserializeWinter(data.winter);
     if (data.borders) sim2.sys.borders = deserializeBorders(data.borders);
     if (data.civ) sim2.sys.civ = deserializeCivAi(data.civ, sim2.factions);
-    if (data.pop && void 0) (void 0)(sim2, data.pop);
+    if (data.pop) wirePopulationRestore(sim2, data.pop);
     if (data.ind) industryRestore(sim2, data.ind);
     if (data.war) restore(sim2, data.war);
     if (data.pol) politicsRestore(sim2, data.pol);
@@ -30327,8 +30406,10 @@ ${s}`, "console");
           this.drawFactionSettlement(ctx, sx, sy, z, f, s, sim2);
         }
       }
-      this.drawSortedEntities(sim2, ctx, ox, oy, z, cw, ch, L);
       this.cityLights.begin(sim2, ox, oy, z, cw, ch, L, { zoom: this.cam.zoom, time: this.time });
+      this.cityLights.drawGround(ctx);
+      this.drawSortedEntities(sim2, ctx, ox, oy, z, cw, ch, L);
+      this.cityLights.drawWindows(ctx);
       this.select.drawGround(sim2, ctx, ox, oy, z, cw, ch, dtReal);
       this.fx.drawWorld(ctx, ox, oy, z, cw, ch);
       if (sim2.placing) {
@@ -30588,6 +30669,7 @@ ${s}`, "console");
         const dx2 = sx + size / 2 - dw2 / 2, dy2 = sy + size - dh2;
         this.shadows.paintedBuilding(ctx, painted, dx2, dy2, dw2, dh2);
         ctx.drawImage(painted, dx2, dy2, dw2, dh2);
+        this.cityLights.note(b, dx2, dy2, dw2, dh2, e);
         return;
       }
       const spr = this.sprites.building(b.id, def, e, b.size || 1);
@@ -30597,6 +30679,7 @@ ${s}`, "console");
       ctx.drawImage(spr.cv, dx, dy, dw, dh);
       this.shadows.selfShade(ctx, spr, dx, dy, dw, dh);
       this._pendingGlow.push({ spr, dx, dy, dw, dh });
+      this.cityLights.note(b, dx, dy, dw, dh, e);
     }
     buildingCategory(id, def) {
       if (def.housing) return "house";

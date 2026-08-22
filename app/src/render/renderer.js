@@ -178,9 +178,17 @@ export class Renderer {
       }
     }
 
+    // --- огни города: begin() печёт слой пятен и обязан стоять ДО прохода
+    // по зданиям (пятна лежат на земле, дома их накрывают), drawGround() —
+    // блит этого слоя. Раньше begin() висел ПОСЛЕ прохода, а drawGround/
+    // drawWindows не вызывались вовсе: модуль работал вполсилы, у 39
+    // нарисованных зданий ночью не светилось ничего.
+    this.cityLights.begin(sim, ox, oy, z, cw, ch, L, { zoom: this.cam.zoom, time: this.time });
+    this.cityLights.drawGround(ctx);
+
     // --- единый проход по глубине: здания + жители + животные, сортировка по Y ---
     this.drawSortedEntities(sim, ctx, ox, oy, z, cw, ch, L);
-    this.cityLights.begin(sim, ox, oy, z, cw, ch, L, { zoom: this.cam.zoom, time: this.time });
+    this.cityLights.drawWindows(ctx);
     this.select.drawGround(sim, ctx, ox, oy, z, cw, ch, dtReal);
     this.fx.drawWorld(ctx, ox, oy, z, cw, ch);
 
@@ -460,6 +468,9 @@ export class Renderer {
       // процедурные, и в одном кадре это сразу видно.
       this.shadows.paintedBuilding(ctx, painted, dx, dy, dw, dh);
       ctx.drawImage(painted, dx, dy, dw, dh);
+      // У нарисованного арта нет собственной карты свечения — окна ночью
+      // даёт city_lights (та же геометрия фасада, что у спрайта).
+      this.cityLights.note(b, dx, dy, dw, dh, e);
       return;
     }
 
@@ -478,6 +489,9 @@ export class Renderer {
     // Самозатенение ложится ПОВЕРХ спрайта и гасит грани, отвёрнутые от света.
     this.shadows.selfShade(ctx, spr, dx, dy, dw, dh);
     this._pendingGlow.push({ spr, dx, dy, dw, dh });
+    // Процедурным спрайтам окна не мешают: карта glow светит изнутри,
+    // узор окон ложится на фасад сверху.
+    this.cityLights.note(b, dx, dy, dw, dh, e);
   }
 
   buildingCategory(id, def) {
