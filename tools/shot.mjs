@@ -126,9 +126,10 @@ await mkdir(OUTDIR, { recursive: true });
 
 const want = process.argv.slice(2);
 const names = want.length ? want : Object.keys(SHOTS);
-// Хром в этом окружении предустановлен по фиксированному пути; версия пакета
-// playwright может с ним расходиться, поэтому путь задаём явно.
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--enable-gpu', '--use-gl=swiftshader'] });
+// Хром задаётся переменной PW_CHROMIUM, иначе берётся браузер из
+// «npx playwright install» (путь знает сам playwright на любой ОС).
+const EXE = process.env.PW_CHROMIUM || undefined;
+const browser = await chromium.launch({ ...(EXE ? { executablePath: EXE } : {}), args: ['--enable-gpu', '--use-gl=swiftshader'] });
 let errors = 0;
 
 for (const name of names) {
