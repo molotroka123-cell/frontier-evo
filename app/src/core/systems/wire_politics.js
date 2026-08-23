@@ -63,6 +63,13 @@ const CONFIRM_DAYS = 2;
 // (ноль) остаётся меньше недели даже при небольшом минусе в день.
 const STAB_ALARM = 20;
 
+// Одна и та же ПРИЧИНА восстания попадает в летопись не чаще раза в этот срок.
+// Живой прогон показал «Восстание» на 26–32% всех записей летописи: строка
+// писалась при каждом бунте, и одна беда засчитывалась по тридцати раз.
+// 90 дней — четверть эпохи: хронист успевает забыть прошлый бунт той же породы,
+// а частые смены причины (война → голодный гнев) по-прежнему пробивают сразу.
+export const REVOLT_CHRONICLE_CD = 90;
+
 // ════════════════════════ АДАПТЕР ════════════════════════
 
 export function installPolitics(sim) {
@@ -73,6 +80,10 @@ export function installPolitics(sim) {
     state: P.createPolitics(sim.rng),
     ui: { confirm: null, confirmDay: -99 },   // подтверждение необратимого выбора
     lastStab: null,                            // разбор дневного прироста для панели
+    // Память хранит СОБЫТИЯ, а не состояния: «причина → день последней записи
+    // о ней в летописи». Именно день записи, а не флаг — одна беда не должна
+    // засчитываться тридцать раз, но и навсегда замолчать она не вправе.
+    revoltChron: {},
   };
   sim.politics = pol;
   sim.pol = pol;
@@ -101,7 +112,14 @@ export function politicsNewDay(sim) {
       // Бунт грабит склады: пятая часть еды и золота — цена нуля стабильности.
       sim.res.food = Math.max(0, sim.res.food * 0.8);
       sim.res.gold = Math.max(0, sim.res.gold * 0.8);
-      sim.addChronicle(`Восстание: толпа взяла площади, склады разграблены (день ${sim.day}).`);
+      // Летопись — про СОБЫТИЯ, а не про повторяющееся состояние: бунт той же
+      // причины молчит REVOLT_CHRONICLE_CD дней. Сам бунт при этом настоящий:
+      // грабёж, toast и счётчик выше работают каждый раз — глушится одна строка.
+      const cause = revoltCause(pol.state, ctx);
+      if (revoltChronAllowed(pol, cause, sim.day)) {
+        pol.revoltChron[cause] = sim.day;
+        sim.addChronicle(`Восстание: толпа взяла площади, склады разграблены (день ${sim.day}).`);
+      }
       sim.sfx?.('alarm');
     }
     if (e.succession) {
@@ -137,6 +155,34 @@ export function politicsNewDay(sim) {
   return pol;
 }
 
+// Причина восстания — ГЛАВНАЯ беда из тех же слагаемых, что разбирает
+// stabilityBreakdown для панели: смута, несчастный народ, злые сословия, войны.
+// Берём одно сильнейшее негативное слагаемое, а не их набор: иначе бунт
+// «война + гнев» и бунт «война + гнев + один несчастный день» считались бы
+// разными причинами и кулдаун не удержал бы спам. Вес — тот же, что в разборе;
+// при равенстве побеждает фиксированный порядок, чтобы ключ был детерминирован.
+function revoltCause(st, ctx) {
+  const wars = Array.isArray(ctx.wars) ? ctx.wars.length : 0;
+  const angry = P.angryFactions(st).length;
+  const rows = [];
+  if (st.turmoil > 0) rows.push(['turmoil', 1.0]);
+  if (ctx.happy < 35) rows.push(['unhappy', 0.5]);
+  if (P.avgApproval(st) <= 35 || angry > 0) rows.push(['estates', 0.5 + 0.2 * Math.min(angry, 3)]);
+  if (wars > 0) rows.push(['war', 0.4 * Math.min(wars, 3)]);
+  if (!rows.length) return 'base';
+  const order = { turmoil: 0, estates: 1, unhappy: 2, war: 3 };
+  rows.sort((a, b) => b[1] - a[1] || order[a[0]] - order[b[0]]);
+  return rows[0][0];
+}
+
+// Прошёл ли срок с последней записи об этой причине. Пустая/битая память не
+// молчит, а пишет: после сброса первое восстание обязано попасть в летопись.
+function revoltChronAllowed(pol, cause, day) {
+  if (!pol.revoltChron || typeof pol.revoltChron !== 'object') pol.revoltChron = {};
+  const last = pol.revoltChron[cause];
+  return !Number.isFinite(last) || day - last >= REVOLT_CHRONICLE_CD;
+}
+
 // Вызывается ядром после того, как игрок разрешил событие: планирует
 // продолжение цепочки и дописывает летопись. Для обычных событий — пустышка.
 export function politicsAfterEvent(sim, ev, key) {
@@ -167,7 +213,18 @@ export function politicsSerialize(sim) {
   return {
     laws: L.serializeLaws(sim.laws),
     politics: P.serializePolitics(sim.politics.state),
+    revoltChron: sanitizeRevoltChron(sim.politics.revoltChron),
   };
+}
+
+// Память причин в сейв идёт только чистой: строковые ключи ограниченной длины,
+// конечные неотрицательные дни. Мусор из чужого сейва просто выбрасывается.
+function sanitizeRevoltChron(m) {
+  const out = {};
+  for (const [k, v] of Object.entries(m || {})) {
+    if (typeof k === 'string' && k && k.length <= 64 && Number.isFinite(v) && v >= 0) out[k] = Math.round(v);
+  }
+  return out;
 }
 
 export function politicsRestore(sim, data) {
@@ -176,6 +233,9 @@ export function politicsRestore(sim, data) {
   // rng трогаем только если правителя в сейве нет: лишний бросок сдвинул бы
   // поток случайностей относительно непрерывной партии.
   if (data.politics) sim.politics.state = P.deserializePolitics(data.politics, sim.rng);
+  // Память восстаний восстанавливается даже без прочих полей: старый сейв без
+  // неё даёт пустую память — и первое после загрузки восстание пишется всегда.
+  sim.politics.revoltChron = sanitizeRevoltChron(data.revoltChron);
   sim.politics.ui = { confirm: null, confirmDay: -99 };
   sim.politics.lastStab = null;
   sim.pol = sim.politics;
