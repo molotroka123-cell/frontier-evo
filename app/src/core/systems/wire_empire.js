@@ -152,6 +152,11 @@ function applySiteEvent(sim, ev) {
 // serialize(sim)
 export function empireSerialize(sim) {
   if (!sim || !sim.empire) return null;
+  // Канонизация тумана перед упаковкой: сейв снимается между суточными
+  // пересчётами, а restore переигрывает updateFog по текущим позициям
+  // жителей — без этого круг serialize→deserialize→serialize расходился
+  // на клетках, где житель стоял в момент сейва (находка прогона W2).
+  if (typeof empireFog === 'function') empireFog(sim);
   const W = sim.empireWire || {};
   return {
     v: 1,
