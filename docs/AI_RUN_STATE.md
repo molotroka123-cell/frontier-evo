@@ -1,82 +1,92 @@
-# AI RUN STATE — ФРОНТИР (ветка ai/alpha-safe-improvement)
+# AI RUN STATE — ФРОНТИР (файл-эстафета)
 
-Обновлено: сессия ox-alpha, 22.08.2026. Читай ЭТОТ файл первым в новой сессии.
+Прочитай ЭТОТ файл первым. Обновлено: сессия ox-alpha, 23.08.2026.
+Репо: `molotroka123-cell/frontier-evo`, ветка `ai/alpha-safe-improvement`.
+Команды: `npm test` (node tools/test-all.mjs) · `npm run build` · `npm run shot`.
+Правило отчёта: в сообщении коммита только то, что проверяется командой; недоделанное — прямым текстом.
 
-## Инцидент (важно!)
-Параллельный агент сделал `git stash` («wip2») и удалил незакоммиченный
-`app/src/core/systems/link_dynasty.js` (1246 строк). Stash поднят обратно
-(pop): восстановлены civ_ai.js / integrate.js / hud.js. МОДУЛЬ ПОТЕРЯН —
-нужно пересоздать. Правило: пока идёт волна династии, другие агенты НЕ
-трогают app/src/core/systems/ и app/src/ui/hud.js.
+## ЖЕЛЕЗНЫЕ ПРАВИЛА (нарушение = переделка)
+- Math.random ЗАПРЕЩЁН в app/src/core/** (только sim.rng или createRng(seed^КОНСТАНТА)).
+- Рендер не зовёт sim.rng (свой хеш от sim.world.seed) и не мутирует sim.
+- core/ без DOM; отчёты систем {mods,reasons,events,flags} применяет ТОЛЬКО integrate.js.
+- У каждой петли — потолок и выход, названный игроку словами; память хранит СОБЫТИЯ, не состояния.
+- UTF-8 без BOM, LF. Никогда не сохранять файлы PowerShell-редиректом (`>` пишет UTF-16).
+- НИКАКИХ .patch/стэшей/карантина тестов: тест либо зелёный в общем прогоне, либо удалён.
+- МОДУЛЬ БЕЗ ПОДКЛЮЧЕНИЯ НЕ СДЕЛАН: импорт + вызов + grep-доказательство в собранном frontier.html.
+- Агент = ровно один новый файл + его тест; общие файлы (renderer/hud/integrate/main/simulation/build.mjs)
+  правит только ведущий, последовательно, по блокам «ПОДКЛЮЧЕНИЕ» с якорями (grep -Fxc = 1).
+- Агентам запрещено запускать npm run build и tools/shot.mjs (общий артефакт/порт).
+- Живой прогон обязателен (3000–12000 дней); FPS мерять максимумом из 3 прогонов на сиде 4242.
 
-## Что проверено и зелёное (до потери файла)
-- simtest.mjs: **18 OK / 0 FAIL** при полной проводке династии.
-- Сейв-кругооборот идентичен (харнесс %TEMP%\opencode\save_diff.mjs).
-- Причина прошлых падений найдена: род бросал общий sim.rng → сдвиг потока
-  (fog[107] 10≠16, пропадал «кризис»). Фикс: собственный поток mulberry32
-  от сида мира (прецедент link_ghost/water/weather).
+## ТЕКУЩЕЕ СОСТОЯНИЕ (проверено командами)
+- Тесты: **44 набора / 1616 проверок, все зелёные** (`node tools/test-all.mjs`).
+- simtest: 18 OK / 0 FAIL. Живой прогон 4 сида × 12000 дней: 0 исключений, 0 NaN,
+  круг сейва бит-в-бит, синхрон правителя 0 нарушений / 48000 проверок.
+- HEAD: 96d0ee0 (+ незакоммиченное, см. ниже). Push выполнен до 96d0ee0.
 
-## Контракт модуля link_dynasty.js (восстановить по нему + тесты как TDD)
-Экспорты (требуют integrate.js / hud.js / app/tests/test-dynasty.mjs):
-- dynastyInstall(sim) — создаёт st {day, house{name,motto,sigil?}, members[],
-  legitimacy(0..100), court[], designated, heir, pretenders[], plots[],
-  marriages[], interregnum:false, interregnumDays, nextId, plotSeq,
-  lastDelta, lastReasons, flags{state}, _rng}
-- dynastyNewDay(sim) → rep {mods:{happy,stab}, reasons[], events[],
-  flags:{state}, lastDelta} — ЧИСТЫЙ, ставит integrate сам; без sim.rng,
-  только dynastyRng(sim)=makeDynRng(sim.seed) (mulberry32 ^0xD19A5711).
-- dynastyHappyMod(sim) → читает sim.sys.dynLinks.mods.happy (клампится)
-- serializeDynasty(st)/restoreDynasty(blob) по явному SAVE_FIELDS (v, day,
-  house, members, legitimacy, court, designated, heir, pretenders, plots,
-  marriages, interregnum, interregnumDays, nextId, plotSeq, lastDelta,
-  lastReasons); restore НЕ бросает rng.
-- heirOf(st, govType) — семантика порядка наследования РАЗНАЯ по типам:
-  monarchy/empire/federation → designated приоритетен (тест id===2),
-  chiefdom → иначе (id===4/3); empire при пустом списке → null;
-  точные случаи см. app/tests/test-dynasty.mjs (источник истины!).
-- Константы: LEGIT_DECAY (распад законности в день), INTERREGNUM_STAB
-  (потолок stab при междуцарствии), INTERREG_AUTO_DAYS (авто-наследование).
-- renderDynastyPanel(sim) / bindDynastyPanel(sim) — DOM только тут;
-  действия через handleDynastyAction(sim, 'court:<i>'|'designate:<id>'|
-  'usurp'|'adopt:<id>'|'expose:<id>') со спеками-строками.
-- Потолки: happyMod ≤ +8; courtGold платит integrate; stab-мод из rep.mods.
+## ЗАКОММИТИРОВАНО И РАБОТАЕТ В ИГРЕ
+- Ночь: городские огни (f24bec3), multiply-тон вместо серой плёнки (f5b44de).
+- Миникарта на модуле MinimapLayer, 1 блит/кадр вместо ~260 fillRect (5422a31).
+- Скорость 0.5× (492c795). Тема theme.css инлайнится в сборку (0a18d6b).
+- Династия: link_dynasty.js (1150 строк, 37 проверок) + проводка integrate/hud (5c344d9).
+- civ_ai: константы FEAR/GAP/SPOT_RES_R + умная экспансия (bf6173e, 5c344d9).
 
-## Проводка (уже в дереве, восстановлена из stash)
-integrate.js: импорт DYN; applyDynastyLinks (~строка 824) = ленивый
-dynastyInstall + merge rep.mods в счастье/stab + courtGold; вызов из
-systemsNewDay. hud.js: вкладка {id:'dynasty', ru:'Род', ic:'👑'} +
-panel_dynasty() → renderDynastyPanel(this.sim).
+## НЕЗАКОММИЧЕННОЕ (проверено зелёным, ЛЕЖИТ В ДЕРЕВЕ — закоммитить первым делом)
+1. `M app/src/core/systems/civ_ai.js` — калибровка под карантинный тест:
+   MASONRY_PATH, chooseTech/research/economy/colonize/findSpot правки.
+   Тест `app/tests/wip/test-civ-settlement.mjs` = **18 OK / 0 FAIL**;
+   базы зелёные: civ-ai 13/0, diplomacy 21/0, link-neighbors 91/0, simtest 18/0.
+   → Перенести тест в app/tests/ (путь ../src/ оттуда корректен) тем же коммитом.
+2. `?? app/src/ui/tutorial10.js` + `?? app/tests/test-tutorial10.mjs` — обучение первых
+   10 минут, 10 шагов, **14 проверок**; coach.js НЕ подключён (якоря в шапке модуля).
+3. `?? app/tests/test-e2e-save.mjs` — сквозной сейв/детерминизм, **15 проверок**.
+4. `M frontier.html` — артефакт промежуточной сборки; после коммита исходников
+   пересобрать `npm run build` и закоммитить заново (артефакт обязан совпадать).
 
-## Порядок восстановления (TDD, маленькими шагами)
-1. Прочитать app/tests/test-dynasty.mjs ЦЕЛИКОМ (это спецификация API).
-2. Написать link_dynasty.js минимально до его зелёного статуса
-   (`node app/tests/test-dynasty.mjs`), затем simtest 18/18,
-   затем `node tools/test-all.mjs` всё зелёное.
-3. Коммит: "feat(dynasty): royal house core (rebuild) + own RNG stream".
-4. Только потом волны ниже.
+## ГЛАВНЫЕ НЕДОДЕЛКИ — ПРОВОДКА (модули написаны, в игру не включены; grep = 0)
+| Модуль | Куда | Как (якоря проверены агентами) |
+|---|---|---|
+| render/faction_town.js (28 проверок) | renderer.js | Заменить тело drawFactionSettlement (~:384) на вызов drawFactionTown(ctx,sx,sy,z,f,s,sim,{L,time}); в точке вызова ~:179 добавить L/time в opts. УБИРАЕТ «квадратики» врагов. |
+| core/systems/settlement_view.js (16) | renderer.js | Импорт для передачи view в faction_town (он импортирует сам; достаточно проброса sim). |
+| core/systems/build_supply.js (20) | integrate.js | В шапке модуля блок ПОДКЛЮЧЕНИЯ: import после `import * as B2 from './build2.js';` (1 совп.), вызов после `applyBuild(sim);` (1), тело applySupply перед `function applyGhost(sim) {` (1). + сериализация flags.deliveries в systemsSerialize/Restore. |
+| ui/menuskin.css + menuskin.js | index.html + tools/build.mjs | По образцу theme.css: линк в dev + инлайн-список в build.mjs. Сейчас в index.html совпадений 0. |
+| ui/tutorial10.js (14) | ui/coach.js | Якоря в шапке модуля: после `from '../core/data.js';` (:19, 1) — импорт; перед `const REMINDERS = [` (:171, 1) — мост STEPS.push(...); в renderCard (:655, 1) — счётчик tutorialProgress. |
 
-## Волны улучшений (утверждены пользователем, 13 шт.)
-Волна A (ядро рода): кастомизация дома (имя/девиз/герб — фундамент
-геральдики), регентство, золотой век, фракции двора, тайная полиция.
-Волна B (внешний контур, зависит от diplomacy_ext): браки-договоры,
-заговоры против соседей, вендетта поколений, наследник-полководец.
-Волна C (презентация): аудиенции, роскошь/аскетизм, геральдика в мире,
-шрифты/CSS (Georgia/Palatino стек, офлайн 0 байт).
-Правила агентов: каждый механика = ОТДЕЛЬНЫЙ файл dyn_<name>.js + свой
-тест test-dyn_<name>.js; запрет sim.rng/Math.random; капы эффектов;
-сериализация своим ключом; DOM только в своём рендере; НЕ трогать чужие
-файлы. Интеграция в link_dynasty/integrate/hud — только главная сессия.
+## УБРАТЬ ЗАВАЛ
+- `docs/wip_patches/*.patch` — УДАЛИТЬ. Декодер подтвердил: оба патча — снимки уже
+  закоммиченной работы; уникального нет; декодированные копии %TEMP%\opencode\decoded_patches\.
+- `app/frontier.html` — УДАЛИТЬ (мёртвый билд 1.5 МБ, путает игроков).
+- `app/tests/wip/` — после переноса test-civ-settlement каталог удалить (остальное перенесено).
 
-## Регламент пользователя
-- Тесты зелёные → коммит после КАЖДОГО улучшения (маленькие коммиты).
-- Push: remote НЕ настроен — попросить URL у пользователя, добавить
-  `git remote add origin <URL>` и пушить после каждого коммита.
-- Доки из мастер-промпта: этот файл + ALPHA_AUDIT.md/PLAN/REGRESSION
-  (последние три ещё не созданы).
+## НАЙДЕНО ЖИВЫМ ПРОГОНОМ (починить; доказательства в отчёте live12k)
+1. СПАМ ЛЕТОПИСИ: «Восстание» = 26–32% всех записей (wire_politics.js:104 пишет каждый
+   e.revolt). Нужен потолок/кулдаун по причине — «события, не состояния».
+2. Сейв теряет: pendingEvent/eventCooldown (перезагрузка глубокой партии расходит rng),
+   однодневные кэши отчётов (sys.dynLinks и др. → законность гуляет ±0.02 после загрузки).
+   Требуется сериализация + миграция SAVE_VERSION.
+3. empireRestore дёргает empireFog → подсвечивает ~11 клеток заново (круг раннего сейва не бит-в-бит).
+4. Политика зажимает возраст правителя снизу (politics.js:225 clamp 14..120): род сажает
+   ребёнка — в политике ему 14. Косметика синхрона, но честнее поднять пол родов (ADULT).
+5. Сид 20260: население падает до 1 к дню 1000 (ранняя игра смертельно жёсткая) — баланс.
+6. Междуцарствия 6–8 за 12000 дней — часто; рассмотреть порог по законности.
 
-## Известные факты аудита (для будущих фич)
-diplomacy_ext — мёртвый реестр (оживить для браков/вендетты); слабые
-здания observatory/press/smithy/treasury; balance.md §7-A не применён
-(ai_core workers 2→5 рекомендовано); Math.random в core отсутствует.
-Графика уже сделана и закоммичена: city lights, ночной multiply-тон,
-миникарта-слой (коммиты f24bec3, f5b44de, 5422a31). День high=29 FPS.
+## НЕПРОВЕРЕННЫЕ СИГНАЛЫ (заявлены, воспроизведения НЕТ — сначала repro, потом fix)
+- Робозавод: производство при def.workers === 0.
+- Погода ферм: двойное перемножение коэффициента дождя/засухи в simulation.js.
+- Кризис еды: софтлок при 57+ жителях (лимит амбаров).
+- Аура кузницы: +10% соседства не входит в расчёт эффективности.
+- Боёвка U19–U24: матрица COUNTERS/знаменосец — проверить, что уже в wire_army/army.js,
+  чего нет (аудит раньше находил знаменосца и контры РЕАЛИЗОВАННЫМИ — сверить с ТЗ).
+
+## ГРАФИКА/UI (следующая волна, по одному агенту на файл)
+- Армии на карте: новый render/armies_map.js (колонны из people.js-спрайтов, фракционная
+  расцветка, полоска мощи) + блок подключения в renderer (вместо пунктира рейдов).
+- Атмосфера врагов: render/faction_fx.js (дым/факелы вражеских городов, пыль марша) + хук.
+- Command Dock: ui/dock.js (+css) — нижний док [Стройка|Род|Войско|Наука|Законы|Карта],
+  Building Drawer категориями, инспектор-карточка; подключение в index.html/main.js — ведущий.
+
+## КРИТЕРИИ СДАЧИ (чеклист)
+□ npm test зелёный (сейчас 44/1616; не меньше)  □ npm run build; git status по frontier.html пуст
+□ npm run shot — «КОНСОЛЬ ЧИСТАЯ»  □ grep-доказательства каждого модуля в frontier.html
+□ tests/wip не существует, .patch нет, app/frontier.html удалён  □ живой прогон 3000+ дней чистый
+□ file/кодировка UTF-8 LF у новых файлов  □ push в ai/alpha-safe-improvement
