@@ -122,6 +122,16 @@ export const SITE_DEFS = {
     loot: { gold: 70, food: 50, wood: 30 },
     desc: 'Дым костров и следы копыт: отсюда ходят за чужим.',
   },
+  // Трофейное знамя (механика banner.js) ставится ТОЛЬКО явным вызовом
+  // plantBanner после победы, поэтому weight 0 и пустые biomes: генератор
+  // (_generateSites) выбирает точки только среди kind 'ruin'/'camp' и эту
+  // запись не увидит. В таблице она нужна ради deserialize: сейв фильтрует
+  // точки по SITE_DEFS[s.def], и без записи здесь трофей пережил бы загрузку.
+  trophy_banner: {
+    ru: 'Трофейное знамя', kind: 'trophy', weight: 0,
+    biomes: [],
+    desc: 'Знамя, водружённое на месте одержанной победы.',
+  },
 };
 
 // Ограничители давления разбойников. Без них модуль ломал баланс: восемь лагерей
@@ -135,6 +145,10 @@ export const BANDIT = {
 };
 
 // ---------------- U36: параметры выселков ----------------
+// Радиус открытия карты вокруг трофейного знамени (см. plantBanner): точка
+// победы — ориентир игрока, и прятать её в тумане значит хоронить механику.
+export const TROPHY_REVEAL = 3;
+
 // Стоимость и требование вынесены сюда, чтобы ядро не хардкодило баланс.
 export const OUTPOST = {
   req: 'masonry',                          // технология-гейт
@@ -413,6 +427,53 @@ export class WorldSites {
     for (const [r, v] of Object.entries(def.loot)) loot[r] = Math.round(v * s.rich);
     const parts = Object.entries(loot).map(([r, v]) => `${r === 'food' ? '🍞' : r === 'wood' ? '🪵' : r === 'stone' ? '🪨' : r === 'steel' ? '⚙️' : r === 'gold' ? '🪙' : '📜'}${v}`);
     return { ok: true, loot, site: s, text: `${def.ru}: найдено ${parts.join(' ')}.` };
+  }
+
+  // ---------------- Трофейные знамёна (механика banner.js) ----------------
+
+  // Ставит трофейную точку на месте победы. Вызывается боевой логикой army.js
+  // через ctx.sites, поэтому модуль боя остаётся чистым, а карта — здесь.
+  // Случайность не нужна: место победы известно точно, кубик только испортил
+  // бы детерминизм боя лишним броском.
+  // opts: { color (цвет фракции), side ('player' | fid), day, name }.
+  plantBanner(x, y, opts = {}) {
+    const xi = Math.max(1, Math.min(this.w - 2, Math.round(x)));
+    const yi = Math.max(1, Math.min(this.h - 2, Math.round(y)));
+    const spot = this._nearestWalkable(xi, yi, 2);
+    if (!spot) return { ok: false, reason: 'Кругом непроходимая местность' };
+    const s = {
+      id: this.nextSiteId++,
+      def: 'trophy_banner', kind: 'trophy',
+      x: spot.x, y: spot.y,
+      claimed: false, destroyed: false,
+      color: opts.color || '#c8a24a',
+      side: opts.side || null,
+      day: opts.day ?? 0,
+      name: opts.name || 'Трофейное знамя',
+    };
+    this.sites.push(s);
+    this.revealCircle(s.x, s.y, TROPHY_REVEAL);
+    return { ok: true, site: s };
+  }
+
+  // Живые трофеи — для рендера и проверок. Разрушаться они не умеют (знамя
+  // не гарнизон), фильтр destroyed оставлен для общности с остальными точками.
+  trophies() { return this.sites.filter(s => s.kind === 'trophy' && !s.destroyed); }
+
+  // Ближайшая проходимая клетка в пределах r (кольца вокруг точки). Бой всегда
+  // идёт на суше, но округление координат может попасть на кромку воды или
+  // горы — знамя ставится рядом, а не тонет.
+  _nearestWalkable(x, y, r) {
+    if (WALKABLE.has(tileAt(this.world, x, y))) return { x, y };
+    for (let rad = 1; rad <= r; rad++) {
+      for (let dy = -rad; dy <= rad; dy++) {
+        for (let dx = -rad; dx <= rad; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue; // кольцо, не квадрат
+          if (WALKABLE.has(tileAt(this.world, x + dx, y + dy))) return { x: x + dx, y: y + dy };
+        }
+      }
+    }
+    return null;
   }
 
   // Сила гарнизона лагеря растёт с эпохой, иначе к Средневековью лагеря

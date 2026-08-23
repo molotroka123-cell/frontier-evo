@@ -48,6 +48,7 @@ import { UNITS, TECHS, TECH_ERA_IDX, ARMY_UPKEEP, WALKABLE, TILE } from '../data
 import { tileAt, findNearestTile } from '../world.js';
 import * as Army from './army.js';
 import * as Front from './front.js';
+import * as BNR from './banner.js'; // U25: знамя даёт силу и трофеи, аура front.js — дух соседям
 
 // ---------------- Константы связки (не механики: механика в модулях) ----------------
 
@@ -161,6 +162,8 @@ function warCtx(sim) {
   }
   return {
     world: sim.world, dt: 1, day: sim.day,
+    sites: sim.sites || null,
+    colors: { player: '#c8a24a' },
     factions: sim.factions, sources,
     atWar: hostility(sim),
   };
@@ -543,6 +546,7 @@ function actBearer(sim) {
   if (lack) return { ok: false, reason: `Не хватает: ${lack}` };
   sim.payCost(BEARER_COST);
   Front.addBearer(st, sq.id);
+  BNR.assignBearer(sq); // боевой флаг отряда: бафф силы в бою и трофейное знамя после победы
   sim.addLog(`${sq.name}: поднято знамя — знаменосец встал в строй.`, 'good');
   return { ok: true, text: 'Знаменосец в строю' };
 }

@@ -46,6 +46,16 @@
 //      поселение исчезает у фракции (модуль удаляет его из f.settlements) и
 //      возвращается событие для лога/хроники ядра.
 //
+// U25. Знаменосец (механика в systems/banner.js, здесь только точки боя).
+//      Отряд с флагом sq.banner дерётся сильнее: множитель bannerPowerMult(k)
+//      по числу знамён рядом с ним — с насыщением и жёстким потолком. Если
+//      сторона проиграла бой под своим знаменем, знамя падает: разовый шок
+//      духа этой армии, флаг снимается, поэтому штраф НЕ накапливается по тикам.
+//      Победа под живым знаменем ставит «Трофейное знамя» на карту через
+//      переданный ctx.sites (WorldSites) и отдаёт chronicle-событие 🏆.
+//      Ни одного нового броска rng: множитель детерминирован, трофей ставится
+//      без кубика — поток случайности боя не сдвигается ни на одно значение.
+//
 // ═══════════════════════════ INTEGRATION ═══════════════════════════
 // simulation.js (я НЕ редактировал ни одного чужого файла — вставки за вами):
 //
@@ -103,10 +113,18 @@
 //    экранная точка = (ox + sq.x * z, oy + sq.y * z), подпись Army.squadReport(sq),
 //    цвет по sq.side ('player' → золотой, иначе FACTIONS.find(...).color),
 //    линия приказа — по sq.path от sq.pathIdx.
+//
+// 9) Знаменосец (U25). Найм: Banner.assignBearer(sq) — флаг на отряде, сейвится
+//    самим serializeArmy. В ctx вызова tickArmy добавляются необязательные
+//      sites:  this.sites            (WorldSites — куда ставить трофеи побед),
+//      day:    this.day,             (день на трофее)
+//      colors: { player: '#c8a24a', [fid]: f.def.color } — цвет знамени;
+//    без sites бой работает как раньше, просто без трофейной точки.
 // ═══════════════════════════════════════════════════════════════════
 
 import { TILE, UNITS, COUNTERS, BUILDINGS } from '../data.js';
 import { aStar, tileAt } from '../world.js';
+import * as Banner from './banner.js';
 
 // ---------------- Осадные машины ----------------
 // В UNITS их нет и добавить туда нельзя (чужой файл), а роль 'siege' в COUNTERS
@@ -200,6 +218,7 @@ export function formSquad(state, opts = {}) {
     units, engines,
     powerBonus: opts.powerBonus || 0,  // «Полководец» из ядра: +N к силе каждого бойца
     mult: opts.mult || 1,              // armyMult зданий/фракции
+    banner: !!opts.banner,             // U25: в отряде есть знаменосец (см. banner.js)
     morale: 100,
     order: { type: 'hold' },
     path: null, pathIdx: 0,
@@ -434,12 +453,17 @@ function diffCounts(before, after) {
 
 // Главная функция боя. НЕ мутирует отряды — возвращает отчёт; применяет его
 // applyBattle(). Так один и тот же бой можно прогнать тысячу раз в тесте.
-// ctx: { tileA, tileB, multA, multB } — рельеф под каждой стороной и внешние
-// множители (штурм, бонус стен).
+// ctx: { tileA, tileB, multA, multB, supportA, supportB } — рельеф под каждой
+// стороной, внешние множители (штурм, бонус стен) и соседи-союзники для подсчёта
+// поддерживающих знамён (U25).
 export function resolveBattle(a, b, ctx = {}, rng) {
   if (!rng) throw new Error('resolveBattle: нужен rng');
   const A = workForce(a, ctx.multA), B = workForce(b, ctx.multB);
   const tileA = ctx.tileA ?? TILE.GRASS, tileB = ctx.tileB ?? TILE.GRASS;
+  // U25: множитель знамён считается ДО цикла и без бросков — он не тратит
+  // значения ГПСЧ, поэтому порядок случайности боя от знамён не сдвигается.
+  const bmA = Banner.bannerPowerMult(Banner.bannerSupport(a, ctx.supportA));
+  const bmB = Banner.bannerPowerMult(Banner.bannerSupport(b, ctx.supportB));
   const startA = rawPower(A), startB = rawPower(B);
   const beforeA = { units: intCounts(A.units), engines: intCounts(A.engines) };
   const beforeB = { units: intCounts(B.units), engines: intCounts(B.engines) };
@@ -452,8 +476,11 @@ export function resolveBattle(a, b, ctx = {}, rng) {
   while (rounds < MAX_ROUNDS) {
     rounds++;
     const mixA = roleMix(A), mixB = roleMix(B);
-    const atkA = forcePower(A, mixB, tileA);
-    const atkB = forcePower(B, mixA, tileB);
+    // Множитель знамён стоит РЯДОМ с силой стороны (а не внутри forcePower):
+    // rawPower выше обязан оставаться «чистой» живучестью, иначе доля потерь —
+    // мерило бегства — зависела бы от того, сколько флажков стоит позади строя.
+    const atkA = forcePower(A, mixB, tileA) * bmA;
+    const atkB = forcePower(B, mixA, tileB) * bmB;
     const dmgA = atkA * ROUND_RATE * rng.range(1 - ROUND_VAR, 1 + ROUND_VAR);
     const dmgB = atkB * ROUND_RATE * rng.range(1 - ROUND_VAR, 1 + ROUND_VAR);
     applyDamage(B, dmgA);
@@ -472,7 +499,7 @@ export function resolveBattle(a, b, ctx = {}, rng) {
   if (!winner) {
     // Никто не сломался за отведённые раунды — победа за тем, кто сохранил
     // больше боевой силы; при точном равенстве побеждает обороняющийся (b).
-    const pa = forcePower(A, roleMix(B), tileA), pb = forcePower(B, roleMix(A), tileB);
+    const pa = forcePower(A, roleMix(B), tileA) * bmA, pb = forcePower(B, roleMix(A), tileB) * bmB;
     winner = pa > pb ? 'a' : 'b';
   }
 
@@ -504,6 +531,10 @@ export function resolveBattle(a, b, ctx = {}, rng) {
 
   return {
     winner, loser: winner === 'a' ? 'b' : 'a', routed, rounds,
+    // U25: сторона-проигравший несла знамя — оно падает (applyBattle снимет
+    // флаг и разово ударит по духу; повторно упасть то же знамя не может).
+    bearerFall: (winner === 'a' ? Banner.hasBearer(b) : Banner.hasBearer(a))
+      ? (winner === 'a' ? 'b' : 'a') : null,
     a: {
       before: beforeA, after: afterA,
       losses: diffCounts(beforeA.units, afterA.units),
@@ -525,7 +556,65 @@ export function applyBattle(a, b, res) {
   const winSq = res.winner === 'a' ? a : b, loseSq = res.winner === 'a' ? b : a;
   winSq.morale = Math.min(100, (winSq.morale ?? 100) + 10);
   loseSq.morale = Math.max(0, (loseSq.morale ?? 100) - 35);
+  // U25: падение знамени — разовый удар по духу проигравшей армии. Флаг
+  // снимается здесь же, поэтому ни повторный вызов applyBattle с тем же
+  // отчётом, ни следующие дни не могут оштрафовать второй раз: знамени больше нет.
+  if (res.bearerFall === 'a' && a.banner) {
+    a.banner = false;
+    a.morale = Math.max(0, (a.morale ?? 100) - Banner.BEARER_FALL_SHOCK);
+  }
+  if (res.bearerFall === 'b' && b.banner) {
+    b.banner = false;
+    b.morale = Math.max(0, (b.morale ?? 100) - Banner.BEARER_FALL_SHOCK);
+  }
   for (const sq of [a, b]) if (!squadAlive(sq)) sq.dead = true;
+}
+
+// ---------------- Знамя после боя (U25) ----------------
+
+// Цвет стороны для трофея: явная таблица из ctx.colors, затем цвет фракции из
+// data.js, затем золото игрока. Порядок именно такой, чтобы ядро могло
+// перекрасить знамя, не трогая боевую математику.
+function sideColor(ctx, side) {
+  if (ctx.colors && ctx.colors[side]) return ctx.colors[side];
+  const f = (ctx.factions || []).find(x => x.id === side);
+  return (f && f.def && f.def.color) || Banner.PLAYER_COLOR;
+}
+
+// Соседи-союзники отряда — сырьё для bannerSupport (радиус проверит сам banner.js).
+function friendsOf(state, sq) {
+  return state.squads.filter(s => s !== sq && s.side === sq.side && squadAlive(s));
+}
+
+// Последствия боя для знамён. Вызывается ОДИН раз на разрешённый бой, сразу
+// после applyBattle: падение знамени уже учтено в morale/флаге, здесь только
+// события и трофей победителя. Летопись получает СОБЫТИЕ (chronicle-строка),
+// а не состояние — состояние живёт в точках WorldSites.
+function bannerAftermath(winSq, loseSq, res, ctx, events) {
+  if (res.bearerFall && loseSq) {
+    const where = `(${Math.round(loseSq.x)},${Math.round(loseSq.y)})`;
+    events.push({
+      type: loseSq.side === 'player' ? 'bad' : 'info',
+      text: loseSq.dead || !squadAlive(loseSq)
+        ? `🕯 Знамя пало вместе с отрядом «${loseSq.name}» у ${where}.`
+        : `🕯 Знаменосец пал у ${where}: «${loseSq.name}» дрогнул.`,
+    });
+  }
+  if (winSq && Banner.hasBearer(winSq) && squadAlive(winSq)) {
+    const x = Math.round(winSq.x), y = Math.round(winSq.y);
+    const planted = Banner.plantTrophy(ctx.sites, x, y, {
+      color: sideColor(ctx, winSq.side),
+      side: winSq.side,
+      day: ctx.day ?? 0,
+      name: `Трофей у (${x},${y})`,
+    });
+    if (planted.ok) {
+      events.push({
+        type: winSq.side === 'player' ? 'good' : 'info', chronicle: true,
+        text: `🏆 Трофейное знамя поднято у (${planted.site.x},${planted.site.y}) — память о победе «${winSq.name}».`,
+      });
+    }
+  }
 }
 
 // ---------------- Осада (U22) ----------------
@@ -708,6 +797,8 @@ export function tickArmy(state, ctx = {}, rng) {
       const res = resolveBattle(a, b, {
         tileA: world ? tileAt(world, a.x, a.y) : TILE.GRASS,
         tileB: world ? tileAt(world, b.x, b.y) : TILE.GRASS,
+        supportA: friendsOf(state, a),
+        supportB: friendsOf(state, b),
       }, rng);
       applyBattle(a, b, res);
       state.battles++; state.lastBattle = res;
@@ -717,6 +808,9 @@ export function tickArmy(state, ctx = {}, rng) {
         text: `⚔ Бой у (${Math.round(a.x)},${Math.round(a.y)}): ${winSq.name} разбил ${loseSq.name}` +
           `${res.routed ? ' (противник бежал)' : ''}. ${battleReport(res)}`,
       });
+      // U25: события знамени идут после основного отчёта — хронологический
+      // порядок «бой → знамя» читается в летописи естественно.
+      bannerAftermath(winSq, loseSq, res, ctx, events);
       if (loseSq.dead) {
         loseSq.order = { type: 'hold' }; loseSq.path = null;
       }
@@ -763,8 +857,21 @@ export function tickArmy(state, ctx = {}, rng) {
       });
       sq.order = { type: 'hold' }; sq.siege = null; sq.path = null;
       sq.x = s.x; sq.y = s.y;
+      // U25: трофей за взятый город ставится уже на координатах поселения —
+      // отряд к этому моменту стоит в его центре.
+      bannerAftermath(sq, null, res, ctx, events);
     } else {
       events.push({ type: sq.side === 'player' ? 'bad' : 'good', text: `🛡 Штурм ${way} отбит. ${battleReport(res)}` });
+      // U25: знамя, брошенное на отбитой стене, падает здесь, а не через
+      // applyBattle — эта ветка применяет итог штурма вручную.
+      if (res.bearerFall === 'a' && sq.banner) {
+        sq.banner = false;
+        sq.morale = Math.max(0, (sq.morale ?? 100) - Banner.BEARER_FALL_SHOCK);
+        events.push({
+          type: sq.side === 'player' ? 'bad' : 'info',
+          text: `🕯 Знаменосец пал на штурме (${Math.round(s.x)},${Math.round(s.y)}): «${sq.name}» лишился знамени.`,
+        });
+      }
       // Пролом заделывают: следующий штурм придётся готовить заново.
       sq.siege.breach = null;
       sq.siege.gate = Math.max(sq.siege.gate, sq.siege.gateMax * 0.25);
@@ -836,6 +943,7 @@ export function serializeArmy(state) {
       id: s.id, side: s.side, name: s.name, x: s.x, y: s.y,
       units: { ...s.units }, engines: { ...s.engines },
       powerBonus: s.powerBonus, mult: s.mult, morale: s.morale,
+      banner: !!s.banner,
       order: { ...s.order },
       path: s.path ? s.path.map(p => ({ x: p.x, y: p.y })) : null,
       pathIdx: s.pathIdx,
@@ -854,6 +962,7 @@ export function deserializeArmy(data) {
     id: s.id, side: s.side, name: s.name, x: s.x, y: s.y,
     units: { ...(s.units || {}) }, engines: { ...(s.engines || {}) },
     powerBonus: s.powerBonus || 0, mult: s.mult || 1, morale: s.morale ?? 100,
+    banner: !!s.banner,
     order: s.order ? { ...s.order } : { type: 'hold' },
     path: s.path ? s.path.map(p => ({ x: p.x, y: p.y })) : null,
     pathIdx: s.pathIdx || 0,
