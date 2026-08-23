@@ -669,6 +669,364 @@ h4.group {
   <div class="credits">ФРОНТИР v2.0 · Frontier Works · работает офлайн</div>
 </div>
 
+<style id="msk-inline">
+/* ============================================================
+   menuskin.css — скин правой меню-панели («ФРОНТИР»).
+   Подключается вручную из index.html ИЛИ рантаймом из menuskin.js
+   (который не дублирует <link>, если тот уже стоит).
+   Ничего не переименовывает и не двигает: только внешний вид.
+   Все новые классы — с префиксом msk-. Офлайн: никаких внешних
+   ресурсов, шрифт — системный стек. Анимации — только при
+   prefers-reduced-motion: no-preference.
+   ============================================================ */
+
+/* ---------- общие переменные скина ---------- */
+#sidePanel.msk-root,
+#sheet.msk-root {
+  --msk-gold: #c9a227;
+  --msk-gold-hi: #e3c766;
+  --msk-gold-dim: rgba(201, 162, 39, .32);
+  --msk-panel: linear-gradient(180deg, rgba(20, 27, 41, .97), rgba(13, 19, 30, .97));
+  --msk-text: #ece8dc;
+  --msk-dim: #b3ac9d;      /* ≥5:1 на фоне панели */
+  --msk-desc: #a49d8e;     /* ≥4.6:1 */
+  --msk-cap: #cfae62;      /* подписи секций, ~7:1 */
+  --msk-res-food: #e0955a;
+  --msk-res-wood: #b08d57;
+  --msk-res-stone: #aab4bd;
+  --msk-res-steel: #86b7d6;
+  --msk-res-gold: #ecc94b;
+  --msk-res-know: #b39ddb;
+  font-family: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+}
+
+/* ---------- оболочка панели (ПК) ---------- */
+#sidePanel.msk-root {
+  background: var(--msk-panel);
+  border-color: rgba(201, 162, 39, .30);
+  border-radius: 14px;
+  box-shadow: 0 14px 44px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+/* мягкий золотой отблеск сверху панели */
+#sidePanel.msk-root::before {
+  content: '';
+  position: absolute; left: 0; right: 0; top: 0; height: 70px;
+  background: linear-gradient(180deg, rgba(201, 162, 39, .09), rgba(201, 162, 39, 0));
+  pointer-events: none;
+  border-radius: 14px 14px 0 0;
+}
+
+/* ---------- вкладки ПК: пилюли с иконками ---------- */
+@media (min-width: 821px) {
+  #sidePanel.msk-root #sideTabs {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-content: flex-start !important;
+    gap: 3px !important;
+    padding: 7px 10px 3px !important;
+    background: rgba(8, 12, 20, .45) !important;
+    border-bottom: none !important;
+    box-shadow: 0 1px 0 rgba(201, 162, 39, .22), inset 0 -12px 16px -14px rgba(0, 0, 0, .8) !important;
+  }
+  /* кнопка остаётся ПРЯМЫМ ребёнком #sideTabs (это критично для setTab()),
+     меняется только вид */
+  #sidePanel.msk-root #sideTabs button {
+    flex: 0 1 auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    min-height: 44px;
+    padding: 6px 13px !important;
+    border-radius: 999px !important;
+    border: 1px solid transparent !important;
+    border-bottom: 1px solid transparent !important;
+    background: rgba(255, 255, 255, .035) !important;
+    color: var(--msk-dim) !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    letter-spacing: .2px !important;
+    cursor: pointer;
+  }
+  #sidePanel.msk-root #sideTabs button:hover {
+    color: #efe9da !important;
+    background: rgba(201, 162, 39, .13) !important;
+    border-color: rgba(201, 162, 39, .38) !important;
+  }
+  /* активная пилюля — золото #c9a227 */
+  #sidePanel.msk-root #sideTabs button.active {
+    color: #191307 !important;
+    background: linear-gradient(180deg, #ddb946, var(--msk-gold)) !important;
+    border-color: var(--msk-gold-hi) !important;
+    box-shadow: 0 2px 10px rgba(201, 162, 39, .35), inset 0 1px 0 rgba(255, 255, 255, .38) !important;
+  }
+  #sidePanel.msk-root #sideTabs button:focus-visible,
+  #sheet.msk-root #sheetTabs button:focus-visible {
+    outline: 2px solid var(--msk-gold-hi);
+    outline-offset: 1px;
+  }
+
+  /* подписи секций вкладок */
+  #sidePanel.msk-root #sideTabs .msk-sep {
+    flex-basis: 100% !important;
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+    margin-top: 5px;
+    min-height: 0;
+    pointer-events: none;
+    user-select: none;
+  }
+  #sidePanel.msk-root #sideTabs .msk-sep::before,
+  #sidePanel.msk-root #sideTabs .msk-sep::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(201, 162, 39, .28));
+  }
+  #sidePanel.msk-root #sideTabs .msk-sep::after {
+    background: linear-gradient(90deg, rgba(201, 162, 39, .28), transparent);
+  }
+  #sidePanel.msk-root #sideTabs .msk-sep > span {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    color: var(--msk-cap);
+    white-space: nowrap;
+  }
+
+  /* контент панели */
+  #sidePanel.msk-root #sideContent { padding: 10px 11px 14px !important; }
+}
+
+/* иконки во вкладках (SVG вставляет menuskin.js) */
+#sidePanel.msk-root .msk-tic,
+#sheet.msk-root .msk-tic {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+#sidePanel.msk-root .msk-tic svg,
+#sheet.msk-root .msk-tic svg {
+  width: 15px; height: 15px;
+  display: block;
+}
+#sheet.msk-root .msk-tic svg { width: 17px; height: 17px; }
+
+/* ---------- нижний шит (телефон) ---------- */
+#sheet.msk-root {
+  background: var(--msk-panel);
+  border-top-color: rgba(201, 162, 39, .30);
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, .55);
+}
+@media (max-width: 820px) {
+  #sheet.msk-root #sheetHandle::before {
+    width: 48px;
+    background: var(--msk-gold);
+    opacity: .75;
+  }
+  /* одна горизонтальная лента пилюль со скроллом вместо 14 колонок */
+  #sheet.msk-root #sheetTabs {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    gap: 4px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  #sheet.msk-root #sheetTabs::-webkit-scrollbar { display: none; }
+  #sheet.msk-root #sheetTabs button {
+    flex: 0 0 auto !important;
+    min-width: 56px;
+    min-height: 44px;
+    padding: 5px 10px calc(5px + var(--safe-bottom, 0px)) !important;
+    margin-bottom: 0;
+    border-radius: 12px 12px 0 0;
+    border-bottom: 2px solid transparent;
+    color: var(--msk-dim) !important;
+    scroll-snap-align: start;
+  }
+  #sheet.msk-root #sheetTabs button.active {
+    color: var(--msk-gold-hi) !important;
+    background: rgba(201, 162, 39, .14);
+    border-bottom-color: var(--msk-gold);
+  }
+  #sheet.msk-root #sheetContent { padding: 10px 12px calc(12px + var(--safe-bottom, 0px)) !important; }
+}
+
+/* ---------- скроллбары панелей ---------- */
+#sidePanel.msk-root #sideContent,
+#sheet.msk-root #sheetContent {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(201, 162, 39, .45) transparent;
+}
+#sidePanel.msk-root #sideContent::-webkit-scrollbar { width: 9px; }
+#sheet.msk-root #sheetContent::-webkit-scrollbar { width: 9px; }
+#sidePanel.msk-root #sideContent::-webkit-scrollbar-track,
+#sheet.msk-root #sheetContent::-webkit-scrollbar-track { background: transparent; }
+#sidePanel.msk-root #sideContent::-webkit-scrollbar-thumb,
+#sheet.msk-root #sheetContent::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(201, 162, 39, .5), rgba(201, 162, 39, .25));
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+#sidePanel.msk-root #sideContent::-webkit-scrollbar-thumb:hover,
+#sheet.msk-root #sheetContent::-webkit-scrollbar-thumb:hover { background-color: rgba(227, 199, 102, .65); }
+
+/* ---------- карточки ---------- */
+#sideContent .card,
+#sheetContent .card {
+  position: relative;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .058), rgba(255, 255, 255, .026));
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 10px;
+  padding: 11px 12px;
+  margin-bottom: 9px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04), 0 3px 12px rgba(0, 0, 0, .25);
+}
+/* золотая насечка слева у кликабельных карточек */
+#sideContent .card[data-build]::before,
+#sideContent .card[data-tech]::before,
+#sideContent .card[data-train]::before,
+#sideContent .card[data-market]::before,
+#sideContent .card[data-mission]::before,
+#sheetContent .card[data-build]::before,
+#sheetContent .card[data-tech]::before,
+#sheetContent .card[data-train]::before,
+#sheetContent .card[data-market]::before,
+#sheetContent .card[data-mission]::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 9px; bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, var(--msk-gold), rgba(201, 162, 39, .18));
+  opacity: .85;
+}
+#sideContent .card.disabled,
+#sheetContent .card.disabled {
+  opacity: .42;
+  filter: saturate(.55);
+}
+#sideContent .card.done-card,
+#sheetContent .card.done-card {
+  border-color: rgba(125, 227, 125, .45);
+  background: linear-gradient(180deg, rgba(125, 227, 125, .07), rgba(125, 227, 125, .02));
+}
+
+#sideContent .card .ttl,
+#sheetContent .card .ttl {
+  font-weight: 650;
+  font-size: 13px;
+  letter-spacing: .1px;
+  align-items: baseline;
+  gap: 8px;
+}
+#sideContent .card .desc,
+#sheetContent .card .desc { color: var(--msk-desc, #a49d8e); line-height: 1.4; margin-top: 4px; }
+#sideContent .card .reason,
+#sheetContent .card .reason { color: #ef9090; margin-top: 4px; }
+
+/* заголовки групп внутри списков (эпохи, «Линейка юнитов»…) */
+#sideContent h4.group,
+#sheetContent h4.group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--msk-cap, #cfae62);
+  font-size: 10.5px;
+  letter-spacing: 1.4px;
+  margin: 14px 2px 7px;
+}
+#sideContent h4.group::after,
+#sheetContent h4.group::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(201, 162, 39, .30), transparent);
+}
+
+/* строка «ключ–значение» и полоса отношений */
+#sideContent .kv, #sheetContent .kv { border-bottom-color: rgba(255, 255, 255, .05); }
+#sideContent .relbar, #sheetContent .relbar { height: 6px; border-radius: 99px; }
+
+/* ---------- цена ресурсными чипами с цветными точками ----------
+   Разметку чипов ставит menuskin.js: <span class="msk-res"><i></i>20</span> */
+.msk-res {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px 1px 5px;
+  margin: 1px 0;
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+.msk-res i {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 4px 0 currentColor;
+}
+.msk-res.msk-food     i { background: var(--msk-res-food, #e0955a); }
+.msk-res.msk-wood     i { background: var(--msk-res-wood, #b08d57); }
+.msk-res.msk-stone    i { background: var(--msk-res-stone, #aab4bd); }
+.msk-res.msk-steel    i { background: var(--msk-res-steel, #86b7d6); }
+.msk-res.msk-gold     i { background: var(--msk-res-gold, #ecc94b); }
+.msk-res.msk-knowledge i { background: var(--msk-res-know, #b39ddb); }
+
+/* стоимость внутри заголовка карточки — выровненный столбик чипов */
+#sideContent .card .cost:not(:empty),
+#sheetContent .card .cost:not(:empty) {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  max-width: 62%;
+  color: inherit;
+}
+
+/* ---------- ховеры/анимации — только если движение разрешено ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  #sideContent .card,
+  #sheetContent .card {
+    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+  }
+  #sideContent .card:hover,
+  #sheetContent .card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(201, 162, 39, .55);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04), 0 8px 22px rgba(0, 0, 0, .38);
+  }
+  #sideContent .card:active,
+  #sheetContent .card:active { transform: translateY(0); }
+  #sidePanel.msk-root #sideTabs button,
+  #sheet.msk-root #sheetTabs button {
+    transition: background .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
+  }
+}
+/* а при явном запрете движения внутри панели не анимируется вообще ничего */
+@media (prefers-reduced-motion: reduce) {
+  #sidePanel.msk-root *,
+  #sheet.msk-root * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ---------- цели (obj) и журнал ---------- */
+#sideContent .obj, #sheetContent .obj { padding: 7px 4px; font-size: 12.5px; }
+#sideContent .obj.current .mark, #sheetContent .obj.current .mark { color: var(--msk-gold-hi); }
+
+</style>
 <script>
 (() => {
   // app/src/core/rng.js
@@ -2367,6 +2725,12 @@ h4.group {
   var WAR_UTILITY = 0.35;
   var PLAYER_WAR_UTILITY = 0.5;
   var BUILDING_IDS = Object.keys(BUILDINGS);
+  var SCI_ARCH_FLOOR = 0.7;
+  var SCI_ARCH_CEIL = 1.6;
+  function scienceArchMult(tr) {
+    const raw = 1 + Math.max(0, (tr && tr.science || 5) - 5) * 0.07 - Math.max(0, (tr && tr.aggression || 5) - 5) * 0.05;
+    return Math.min(SCI_ARCH_CEIL, Math.max(SCI_ARCH_FLOOR, raw));
+  }
   var TECH_BY_ID2 = Object.fromEntries(TECHS.map((t, i) => [t.id, { ...t, idx: i }]));
   var TECH_UNLOCKS = (() => {
     const map = {};
@@ -2525,7 +2889,7 @@ h4.group {
     gain.stone += f.P * 0.018;
     gain.gold += f.P * 0.03 * (0.5 + tr.trade / 10);
     gain.knowledge += (0.15 * towns + f.P * 6e-3) * (tr.science / 5);
-    gain.knowledge *= (bn.science || 1) * (pn.science || 1);
+    gain.knowledge *= scienceArchMult(tr) * (bn.science || 1) * (pn.science || 1);
     gain.gold *= goldMult * (bn.gold || 1);
     gain.steel *= industry * (bn.steel || 1);
     gain.stone *= industry;
@@ -5496,6 +5860,50 @@ h4.group {
     return f && f.def ? f.def.name : "соседи";
   }
 
+  // app/src/core/systems/banner.js
+  var BANNER_POWER_CAP = 0.15;
+  var BANNER_HALF = 2;
+  var BANNER_COORD_RADIUS = 8;
+  var BEARER_FALL_SHOCK = 20;
+  var PLAYER_COLOR = "#c8a24a";
+  function bannerPowerMult(k) {
+    const n = Math.max(0, Math.floor(k || 0));
+    if (n <= 0) return 1;
+    return 1 + BANNER_POWER_CAP * n / (n + BANNER_HALF);
+  }
+  function hasBearer(sq) {
+    return !!(sq && sq.banner);
+  }
+  function assignBearer(sq) {
+    if (!sq || sq.banner) return false;
+    sq.banner = true;
+    return true;
+  }
+  function _alive(sq) {
+    if (!sq || sq.dead) return false;
+    for (const v of Object.values(sq.units || {})) if (v > 0) return true;
+    for (const v of Object.values(sq.engines || {})) if (v > 0) return true;
+    return false;
+  }
+  function bannerSupport(sq, friends, radius = BANNER_COORD_RADIUS) {
+    let k = 0;
+    if (_alive(sq) && hasBearer(sq)) k++;
+    for (const f of friends || []) {
+      if (!f || f === sq) continue;
+      if (!_alive(f) || !hasBearer(f)) continue;
+      if (sq.side && f.side !== sq.side) continue;
+      if (Math.hypot(f.x - sq.x, f.y - sq.y) > radius) continue;
+      k++;
+    }
+    return k;
+  }
+  function plantTrophy(sites, x, y, opts = {}) {
+    if (!sites || typeof sites.plantBanner !== "function") {
+      return { ok: false, reason: "Карта точек не подключена" };
+    }
+    return sites.plantBanner(x, y, opts);
+  }
+
   // app/src/core/systems/army.js
   var SIEGE_ENGINES = {
     ram: { id: "ram", name: "Таран", role: "siege", target: "gate", power: 16, crew: 4, speed: 3, req: "warfare", cost: { wood: 40, stone: 10 }, fieldPower: 2 },
@@ -5575,6 +5983,8 @@ h4.group {
       // «Полководец» из ядра: +N к силе каждого бойца
       mult: opts.mult || 1,
       // armyMult зданий/фракции
+      banner: !!opts.banner,
+      // U25: в отряде есть знаменосец (см. banner.js)
       morale: 100,
       order: { type: "hold" },
       path: null,
@@ -5778,6 +6188,8 @@ h4.group {
     if (!rng) throw new Error("resolveBattle: нужен rng");
     const A = workForce(a, ctx.multA), B2 = workForce(b, ctx.multB);
     const tileA = ctx.tileA ?? TILE.GRASS, tileB = ctx.tileB ?? TILE.GRASS;
+    const bmA = bannerPowerMult(bannerSupport(a, ctx.supportA));
+    const bmB = bannerPowerMult(bannerSupport(b, ctx.supportB));
     const startA = rawPower(A), startB = rawPower(B2);
     const beforeA = { units: intCounts(A.units), engines: intCounts(A.engines) };
     const beforeB = { units: intCounts(B2.units), engines: intCounts(B2.engines) };
@@ -5786,8 +6198,8 @@ h4.group {
     while (rounds < MAX_ROUNDS) {
       rounds++;
       const mixA = roleMix(A), mixB = roleMix(B2);
-      const atkA = forcePower(A, mixB, tileA);
-      const atkB = forcePower(B2, mixA, tileB);
+      const atkA = forcePower(A, mixB, tileA) * bmA;
+      const atkB = forcePower(B2, mixA, tileB) * bmB;
       const dmgA = atkA * ROUND_RATE * rng.range(1 - ROUND_VAR, 1 + ROUND_VAR);
       const dmgB = atkB * ROUND_RATE * rng.range(1 - ROUND_VAR, 1 + ROUND_VAR);
       applyDamage(B2, dmgA);
@@ -5805,7 +6217,7 @@ h4.group {
       }
     }
     if (!winner) {
-      const pa = forcePower(A, roleMix(B2), tileA), pb = forcePower(B2, roleMix(A), tileB);
+      const pa = forcePower(A, roleMix(B2), tileA) * bmA, pb = forcePower(B2, roleMix(A), tileB) * bmB;
       winner = pa > pb ? "a" : "b";
     }
     const afterA = { units: intCounts(A.units), engines: { ...beforeA.engines } };
@@ -5835,6 +6247,9 @@ h4.group {
       loser: winner === "a" ? "b" : "a",
       routed,
       rounds,
+      // U25: сторона-проигравший несла знамя — оно падает (applyBattle снимет
+      // флаг и разово ударит по духу; повторно упасть то же знамя не может).
+      bearerFall: (winner === "a" ? hasBearer(b) : hasBearer(a)) ? winner === "a" ? "b" : "a" : null,
       a: {
         before: beforeA,
         after: afterA,
@@ -5859,7 +6274,48 @@ h4.group {
     const winSq = res.winner === "a" ? a : b, loseSq = res.winner === "a" ? b : a;
     winSq.morale = Math.min(100, (winSq.morale ?? 100) + 10);
     loseSq.morale = Math.max(0, (loseSq.morale ?? 100) - 35);
+    if (res.bearerFall === "a" && a.banner) {
+      a.banner = false;
+      a.morale = Math.max(0, (a.morale ?? 100) - BEARER_FALL_SHOCK);
+    }
+    if (res.bearerFall === "b" && b.banner) {
+      b.banner = false;
+      b.morale = Math.max(0, (b.morale ?? 100) - BEARER_FALL_SHOCK);
+    }
     for (const sq of [a, b]) if (!squadAlive(sq)) sq.dead = true;
+  }
+  function sideColor(ctx, side) {
+    if (ctx.colors && ctx.colors[side]) return ctx.colors[side];
+    const f = (ctx.factions || []).find((x) => x.id === side);
+    return f && f.def && f.def.color || PLAYER_COLOR;
+  }
+  function friendsOf(state, sq) {
+    return state.squads.filter((s) => s !== sq && s.side === sq.side && squadAlive(s));
+  }
+  function bannerAftermath(winSq, loseSq, res, ctx, events) {
+    if (res.bearerFall && loseSq) {
+      const where = `(${Math.round(loseSq.x)},${Math.round(loseSq.y)})`;
+      events.push({
+        type: loseSq.side === "player" ? "bad" : "info",
+        text: loseSq.dead || !squadAlive(loseSq) ? `🕯 Знамя пало вместе с отрядом «${loseSq.name}» у ${where}.` : `🕯 Знаменосец пал у ${where}: «${loseSq.name}» дрогнул.`
+      });
+    }
+    if (winSq && hasBearer(winSq) && squadAlive(winSq)) {
+      const x = Math.round(winSq.x), y = Math.round(winSq.y);
+      const planted = plantTrophy(ctx.sites, x, y, {
+        color: sideColor(ctx, winSq.side),
+        side: winSq.side,
+        day: ctx.day ?? 0,
+        name: `Трофей у (${x},${y})`
+      });
+      if (planted.ok) {
+        events.push({
+          type: winSq.side === "player" ? "good" : "info",
+          chronicle: true,
+          text: `🏆 Трофейное знамя поднято у (${planted.site.x},${planted.site.y}) — память о победе «${winSq.name}».`
+        });
+      }
+    }
   }
   function createFortification(opts = {}) {
     const wall = Math.max(0, opts.wall || 0);
@@ -6012,7 +6468,9 @@ h4.group {
         if (!ordered && !hostile(a.side, b.side)) continue;
         const res = resolveBattle(a, b, {
           tileA: world ? tileAt(world, a.x, a.y) : TILE.GRASS,
-          tileB: world ? tileAt(world, b.x, b.y) : TILE.GRASS
+          tileB: world ? tileAt(world, b.x, b.y) : TILE.GRASS,
+          supportA: friendsOf(state, a),
+          supportB: friendsOf(state, b)
         }, rng);
         applyBattle(a, b, res);
         state.battles++;
@@ -6022,6 +6480,7 @@ h4.group {
           type: winSq.side === "player" ? "good" : "bad",
           text: `⚔ Бой у (${Math.round(a.x)},${Math.round(a.y)}): ${winSq.name} разбил ${loseSq.name}${res.routed ? " (противник бежал)" : ""}. ${battleReport(res)}`
         });
+        bannerAftermath(winSq, loseSq, res, ctx, events);
         if (loseSq.dead) {
           loseSq.order = { type: "hold" };
           loseSq.path = null;
@@ -6083,8 +6542,17 @@ h4.group {
         sq.path = null;
         sq.x = s.x;
         sq.y = s.y;
+        bannerAftermath(sq, null, res, ctx, events);
       } else {
         events.push({ type: sq.side === "player" ? "bad" : "good", text: `🛡 Штурм ${way} отбит. ${battleReport(res)}` });
+        if (res.bearerFall === "a" && sq.banner) {
+          sq.banner = false;
+          sq.morale = Math.max(0, (sq.morale ?? 100) - BEARER_FALL_SHOCK);
+          events.push({
+            type: sq.side === "player" ? "bad" : "info",
+            text: `🕯 Знаменосец пал на штурме (${Math.round(s.x)},${Math.round(s.y)}): «${sq.name}» лишился знамени.`
+          });
+        }
         sq.siege.breach = null;
         sq.siege.gate = Math.max(sq.siege.gate, sq.siege.gateMax * 0.25);
         sq.siege.wall = Math.max(sq.siege.wall, sq.siege.wallMax * 0.25);
@@ -6162,6 +6630,7 @@ h4.group {
         powerBonus: s.powerBonus,
         mult: s.mult,
         morale: s.morale,
+        banner: !!s.banner,
         order: { ...s.order },
         path: s.path ? s.path.map((p) => ({ x: p.x, y: p.y })) : null,
         pathIdx: s.pathIdx,
@@ -6186,6 +6655,7 @@ h4.group {
       powerBonus: s.powerBonus || 0,
       mult: s.mult || 1,
       morale: s.morale ?? 100,
+      banner: !!s.banner,
       order: s.order ? { ...s.order } : { type: "hold" },
       path: s.path ? s.path.map((p) => ({ x: p.x, y: p.y })) : null,
       pathIdx: s.pathIdx || 0,
@@ -6309,10 +6779,10 @@ h4.group {
   function _pickSpread(state, cands, kind, max, spacing, rng) {
     const out = [];
     if (!cands.length || max <= 0) return out;
-    const start = rng ? rng.int(0, cands.length - 1) : 0;
+    const start2 = rng ? rng.int(0, cands.length - 1) : 0;
     let num14 = 1;
     for (let k = 0; k < cands.length && out.length < max; k++) {
-      const c = cands[(start + k) % cands.length];
+      const c = cands[(start2 + k) % cands.length];
       if (out.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < spacing)) continue;
       if (state.points.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < spacing)) continue;
       out.push(addPoint(state, kind, c.x, c.y, `${POINT_KIND_RU[kind]} №${num14++}`));
@@ -6397,7 +6867,7 @@ h4.group {
   function addBearer(state, squadId) {
     state.bearers[squadId] = true;
   }
-  function hasBearer(state, squadId) {
+  function hasBearer2(state, squadId) {
     return !!state.bearers[squadId];
   }
   function _applyAura(state, army, dt) {
@@ -6727,6 +7197,8 @@ h4.group {
       world: sim2.world,
       dt: 1,
       day: sim2.day,
+      sites: sim2.sites || null,
+      colors: { player: "#c8a24a" },
       factions: sim2.factions,
       sources,
       atWar: hostility(sim2)
@@ -7016,11 +7488,12 @@ h4.group {
     const sq = selectedSquad(sim2);
     if (!sq) return { ok: false, reason: "Сначала выберите отряд" };
     const st = sim2.war.front.state;
-    if (hasBearer(st, sq.id)) return { ok: false, reason: "В этом отряде уже есть знаменосец" };
+    if (hasBearer2(st, sq.id)) return { ok: false, reason: "В этом отряде уже есть знаменосец" };
     const lack = sim2.lackCost(BEARER_COST);
     if (lack) return { ok: false, reason: `Не хватает: ${lack}` };
     sim2.payCost(BEARER_COST);
     addBearer(st, sq.id);
+    assignBearer(sq);
     sim2.addLog(`${sq.name}: поднято знамя — знаменосец встал в строй.`, "good");
     return { ok: true, text: "Знаменосец в строю" };
   }
@@ -7171,7 +7644,7 @@ h4.group {
     for (const sq of list) {
       const tile = tileAt(sim2.world, sq.x, sq.y);
       const sup = supplyOf(W.front.state, sq.id);
-      const bearer = hasBearer(W.front.state, sq.id);
+      const bearer = hasBearer2(W.front.state, sq.id);
       const isSel = sel && sel.id === sq.id;
       const parts = [];
       for (const [uid, n] of Object.entries(sq.units || {})) if (n > 0) parts.push(`${UNIT_BY_ID2[uid].name} ×${n}`);
@@ -7198,7 +7671,7 @@ h4.group {
   }
   function _orders(sim2, sq) {
     const W = sim2.war;
-    const bearer = hasBearer(W.front.state, sq.id);
+    const bearer = hasBearer2(W.front.state, sq.id);
     const home = atHome(sim2, sq);
     let html = `<h4 class="group">Приказы: ${sq.name}</h4>`;
     html += `<div class="card"><div class="ttl"><span>Манёвр</span><span class="cost">${_n2(squadSpeed(sq))} кл./день</span></div>
@@ -10095,6 +10568,18 @@ h4.group {
       // разброс дней между налётами одного лагеря
       loot: { gold: 70, food: 50, wood: 30 },
       desc: "Дым костров и следы копыт: отсюда ходят за чужим."
+    },
+    // Трофейное знамя (механика banner.js) ставится ТОЛЬКО явным вызовом
+    // plantBanner после победы, поэтому weight 0 и пустые biomes: генератор
+    // (_generateSites) выбирает точки только среди kind 'ruin'/'camp' и эту
+    // запись не увидит. В таблице она нужна ради deserialize: сейв фильтрует
+    // точки по SITE_DEFS[s.def], и без записи здесь трофей пережил бы загрузку.
+    trophy_banner: {
+      ru: "Трофейное знамя",
+      kind: "trophy",
+      weight: 0,
+      biomes: [],
+      desc: "Знамя, водружённое на месте одержанной победы."
     }
   };
   var BANDIT = {
@@ -10105,6 +10590,7 @@ h4.group {
     raidRange: 32
     // дальше лагерь до поселения просто не ходит — он мишень, а не угроза
   };
+  var TROPHY_REVEAL = 3;
   var OUTPOST = {
     req: "masonry",
     // технология-гейт
@@ -10382,6 +10868,54 @@ h4.group {
       for (const [r, v] of Object.entries(def.loot)) loot[r] = Math.round(v * s.rich);
       const parts = Object.entries(loot).map(([r, v]) => `${r === "food" ? "🍞" : r === "wood" ? "🪵" : r === "stone" ? "🪨" : r === "steel" ? "⚙️" : r === "gold" ? "🪙" : "📜"}${v}`);
       return { ok: true, loot, site: s, text: `${def.ru}: найдено ${parts.join(" ")}.` };
+    }
+    // ---------------- Трофейные знамёна (механика banner.js) ----------------
+    // Ставит трофейную точку на месте победы. Вызывается боевой логикой army.js
+    // через ctx.sites, поэтому модуль боя остаётся чистым, а карта — здесь.
+    // Случайность не нужна: место победы известно точно, кубик только испортил
+    // бы детерминизм боя лишним броском.
+    // opts: { color (цвет фракции), side ('player' | fid), day, name }.
+    plantBanner(x, y, opts = {}) {
+      const xi = Math.max(1, Math.min(this.w - 2, Math.round(x)));
+      const yi = Math.max(1, Math.min(this.h - 2, Math.round(y)));
+      const spot = this._nearestWalkable(xi, yi, 2);
+      if (!spot) return { ok: false, reason: "Кругом непроходимая местность" };
+      const s = {
+        id: this.nextSiteId++,
+        def: "trophy_banner",
+        kind: "trophy",
+        x: spot.x,
+        y: spot.y,
+        claimed: false,
+        destroyed: false,
+        color: opts.color || "#c8a24a",
+        side: opts.side || null,
+        day: opts.day ?? 0,
+        name: opts.name || "Трофейное знамя"
+      };
+      this.sites.push(s);
+      this.revealCircle(s.x, s.y, TROPHY_REVEAL);
+      return { ok: true, site: s };
+    }
+    // Живые трофеи — для рендера и проверок. Разрушаться они не умеют (знамя
+    // не гарнизон), фильтр destroyed оставлен для общности с остальными точками.
+    trophies() {
+      return this.sites.filter((s) => s.kind === "trophy" && !s.destroyed);
+    }
+    // Ближайшая проходимая клетка в пределах r (кольца вокруг точки). Бой всегда
+    // идёт на суше, но округление координат может попасть на кромку воды или
+    // горы — знамя ставится рядом, а не тонет.
+    _nearestWalkable(x, y, r) {
+      if (WALKABLE.has(tileAt(this.world, x, y))) return { x, y };
+      for (let rad = 1; rad <= r; rad++) {
+        for (let dy = -rad; dy <= rad; dy++) {
+          for (let dx = -rad; dx <= rad; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
+            if (WALKABLE.has(tileAt(this.world, x + dx, y + dy))) return { x: x + dx, y: y + dy };
+          }
+        }
+      }
+      return null;
     }
     // Сила гарнизона лагеря растёт с эпохой, иначе к Средневековью лагеря
     // становятся бесплатным кладом и точка интереса умирает как механика.
@@ -24522,6 +25056,498 @@ ${s}`, "console");
     return `rgb(${Math.round(a[0] * (1 - k) + b[0] * k)},${Math.round(a[1] * (1 - k) + b[1] * k)},${Math.round(a[2] * (1 - k) + b[2] * k)})`;
   }
 
+  // app/src/core/systems/settlement_view.js
+  var TIER_THRESHOLDS = [14, 28, 50, 80];
+  var ERA_SCALE = 0.35;
+  var MAX_TIER = 4;
+  var wallsByTier = (t) => t >= 4 ? 2 : t >= 2 ? 1 : 0;
+  var wallsByDefense = (d) => d >= 8 ? 2 : d >= 4 ? 1 : 0;
+  var DAMAGE_WINDOW = 30;
+  var DAMAGE_RADIUS2 = 8 * 8;
+  var WAR_MARK = "⚔";
+  var COORD_RE = /\((-?\d+)[,;]\s*(-?\d+)\)/;
+  var VIEW_CACHE = /* @__PURE__ */ new WeakMap();
+  var cacheVersion = 0;
+  function scanDamage(sim2, sx, sy) {
+    const log = sim2.log;
+    if (!Array.isArray(log)) return false;
+    const start2 = Math.max(0, log.length - DAMAGE_WINDOW);
+    for (let i = log.length - 1; i >= start2; i--) {
+      const e = log[i];
+      if (!e || typeof e.text !== "string" || e.text.indexOf(WAR_MARK) < 0) continue;
+      const m = COORD_RE.exec(e.text);
+      if (!m) continue;
+      const dx = Number(m[1]) - sx;
+      const dy = Number(m[2]) - sy;
+      if (dx * dx + dy * dy <= DAMAGE_RADIUS2) return true;
+    }
+    return false;
+  }
+  function buildView(sim2, f, s) {
+    const scale = 1 + (sim2.eraIndex | 0) * ERA_SCALE;
+    const P = Math.max(0, Number(f.P) || 0);
+    let base = 0;
+    for (let i = 0; i < TIER_THRESHOLDS.length; i++) {
+      if (P >= TIER_THRESHOLDS[i] * scale) base++;
+    }
+    const isCapital = !!s.capital || Array.isArray(f.settlements) && f.settlements[0] === s;
+    const tier = Math.min(MAX_TIER, base + (isCapital ? 1 : 0));
+    const traits2 = f.def && f.def.traits ? f.def.traits : null;
+    const walls = Math.min(
+      wallsByTier(tier),
+      wallsByDefense(Number(traits2 && traits2.defense) || 0)
+    );
+    const id = f.id;
+    const atWar2 = Array.isArray(sim2.wars) && sim2.wars.some((w) => w && w.fid === id) || Array.isArray(sim2.aiWars) && sim2.aiWars.some((w) => w && (w.a === id || w.b === id));
+    const damaged = scanDamage(sim2, s.x | 0, s.y | 0);
+    const nSett = Math.max(1, Array.isArray(f.settlements) ? f.settlements.length : 1);
+    const pop = Math.floor(P / nSett);
+    const banner = hash2(s.x | 0, s.y | 0) * 3 | 0;
+    return { tier, walls, atWar: atWar2, damaged, pop, banner };
+  }
+  function settlementView(sim2, f, s) {
+    if (!sim2 || !f || !s) return null;
+    const seed = sim2.seed >>> 0;
+    const day = sim2.day | 0;
+    let slot = VIEW_CACHE.get(s);
+    if (!slot || slot.seed !== seed || slot.day !== day || slot.version !== cacheVersion) {
+      slot = { seed, day, version: cacheVersion, view: buildView(sim2, f, s) };
+      VIEW_CACHE.set(s, slot);
+    }
+    return slot.view;
+  }
+
+  // app/src/render/faction_town.js
+  var WOOD_WALL = ["#9c7a48", "#8a6a3e"];
+  var WOOD_ROOF = ["#6b4f35", "#5d442c"];
+  var STONE_WALL = ["#b1aa9a", "#a29a89"];
+  var TILE_ROOF = ["#a0522d", "#8a4326"];
+  var WALL_STROKE = "#6f6a60";
+  var DARK = "#3a2f22";
+  var RUIN_WALL = "#33302c";
+  var SHADOW_STYLE = "rgba(0,0,0,0.25)";
+  var WIN_RGB = "255,182,88";
+  var SMOKE_RGB = "96,92,90";
+  var TAU = Math.PI * 2;
+  var WIN_N = [0, 2, 3, 3, 4];
+  var FALLBACK_VIEW = { tier: 1, walls: 0, atWar: false, damaged: false, pop: 0, banner: 1 };
+  var BANNER_CACHE = /* @__PURE__ */ new Map();
+  var BANNER_CACHE_MAX = 12;
+  function bakeBanner(color, variant, war) {
+    const key = `${color}|${variant}|${war ? 1 : 0}`;
+    const hit = BANNER_CACHE.get(key);
+    if (hit) return hit;
+    const cv = document.createElement("canvas");
+    cv.width = 40;
+    cv.height = 96;
+    const c = cv.getContext("2d");
+    c.fillStyle = "#4a3620";
+    c.fillRect(6, 6, 3, 86);
+    c.fillStyle = "#c9a227";
+    c.beginPath();
+    c.arc(7.5, 5, 2.6, 0, TAU);
+    c.fill();
+    const x0 = 9, x1 = 43, y0 = 9, y1 = 37;
+    c.beginPath();
+    c.moveTo(x0, y0);
+    c.lineTo(x1, y0);
+    if (variant === 0) {
+      c.lineTo(x1, y1);
+      c.lineTo((x0 + x1) / 2, y1 - 9);
+      c.lineTo(x0, y1);
+    } else if (variant === 1) {
+      c.lineTo(x1, y1);
+      c.lineTo(x0, y1);
+    } else {
+      c.lineTo(x1, y0 + 7);
+      c.lineTo((x0 + x1) / 2 + 2, (y0 + y1) / 2);
+      c.lineTo(x1, y1);
+      c.lineTo(x0, y1);
+    }
+    c.closePath();
+    c.fillStyle = color;
+    c.fill();
+    if (war) {
+      c.strokeStyle = "#c0392b";
+      c.lineWidth = 2.5;
+      c.stroke();
+    }
+    c.fillStyle = "rgba(255,255,255,0.5)";
+    c.beginPath();
+    c.arc(x0 + 9, y0 + 9, 3.6, 0, TAU);
+    c.fill();
+    if (BANNER_CACHE.size >= BANNER_CACHE_MAX) {
+      BANNER_CACHE.delete(BANNER_CACHE.keys().next().value);
+    }
+    BANNER_CACHE.set(key, cv);
+    return cv;
+  }
+  function drawBannerLive(ctx, x, footY, w, h, color, variant, war) {
+    const pw = Math.max(1.5, w * 0.08);
+    ctx.fillStyle = "#4a3620";
+    ctx.fillRect(x - w / 2, footY - h, pw, h);
+    const x0 = x - w / 2 + w * 0.1, cw = w * 0.9, x1 = x0 + cw;
+    const y0 = footY - h, ch = h * 0.34, y1 = y0 + ch;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y0);
+    if (variant === 0) {
+      ctx.lineTo(x1, y1);
+      ctx.lineTo(x0 + cw / 2, y1 - ch * 0.34);
+      ctx.lineTo(x0, y1);
+    } else if (variant === 1) {
+      ctx.lineTo(x1, y1);
+      ctx.lineTo(x0, y1);
+    } else {
+      ctx.lineTo(x1, y0 + ch * 0.26);
+      ctx.lineTo(x0 + cw / 2 + cw * 0.06, y0 + ch * 0.5);
+      ctx.lineTo(x1, y1);
+      ctx.lineTo(x0, y1);
+    }
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    if (war) {
+      ctx.strokeStyle = "#c0392b";
+      ctx.lineWidth = Math.max(1, h * 0.03);
+      ctx.stroke();
+    }
+  }
+  function contactShadow(ctx, cx, cy, rx, ry) {
+    ctx.fillStyle = SHADOW_STYLE;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, TAU);
+    ctx.fill();
+  }
+  function house(ctx, hx, footY, w, hb, rh, wall, roof, stone, night, winA, r1, r23) {
+    contactShadow(ctx, hx, footY + 1, w * 0.62, Math.max(1.5, w * 0.2));
+    ctx.fillStyle = wall;
+    ctx.fillRect(hx - w / 2, footY - hb, w, hb);
+    if (stone) {
+      ctx.fillStyle = "#6f6a60";
+      ctx.fillRect(hx + w * 0.16, footY - hb - rh * 0.85, Math.max(1.5, w * 0.11), rh * 0.85 + hb * 0.25);
+    }
+    ctx.beginPath();
+    ctx.moveTo(hx - w * 0.62, footY - hb);
+    ctx.lineTo(hx, footY - hb - rh);
+    ctx.lineTo(hx + w * 0.62, footY - hb);
+    ctx.closePath();
+    ctx.fillStyle = roof;
+    ctx.fill();
+    if (stone) {
+      ctx.strokeStyle = "rgba(0,0,0,0.18)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(hx - w * 0.34, footY - hb - rh * 0.42);
+      ctx.lineTo(hx + w * 0.34, footY - hb - rh * 0.42);
+      ctx.moveTo(hx - w * 0.2, footY - hb - rh * 0.74);
+      ctx.lineTo(hx + w * 0.2, footY - hb - rh * 0.74);
+      ctx.stroke();
+    }
+    ctx.fillStyle = DARK;
+    ctx.fillRect(hx - w * 0.08, footY - hb * 0.55, Math.max(1, w * 0.16), hb * 0.55);
+    if (night > 0) {
+      const wx = hx + (r1 - 0.5) * w * 0.5;
+      const wy = footY - hb * (0.4 + r23 * 0.35);
+      const ww = Math.max(1.5, w * 0.14);
+      ctx.fillStyle = `rgba(${WIN_RGB},${winA})`;
+      ctx.fillRect(wx - ww / 2, wy - ww * 0.8, ww, ww * 1.6);
+    }
+  }
+  function tower(ctx, tx, footY, w, hb, night, winA, r1) {
+    contactShadow(ctx, tx, footY + 1, w * 0.8, Math.max(1.5, w * 0.3));
+    ctx.fillStyle = "#9a948a";
+    ctx.fillRect(tx - w / 2, footY - hb, w, hb);
+    ctx.beginPath();
+    ctx.moveTo(tx - w * 0.75, footY - hb);
+    ctx.lineTo(tx, footY - hb - hb * 0.42);
+    ctx.lineTo(tx + w * 0.75, footY - hb);
+    ctx.closePath();
+    ctx.fillStyle = "#6d4a3a";
+    ctx.fill();
+    if (night > 0) {
+      const ww = Math.max(1.5, w * 0.3);
+      ctx.fillStyle = `rgba(${WIN_RGB},${winA})`;
+      ctx.fillRect(tx + (r1 - 0.5) * w * 0.3 - ww / 2, footY - hb * 0.72, ww, ww * 1.7);
+    }
+  }
+  function ruin(ctx, hx, footY, w, hb, time, rnd) {
+    contactShadow(ctx, hx, footY + 1, w * 0.66, Math.max(1.5, w * 0.22));
+    ctx.fillStyle = RUIN_WALL;
+    ctx.fillRect(hx - w / 2, footY - hb * 0.7, w, hb * 0.7);
+    ctx.strokeStyle = "#211e1b";
+    ctx.lineWidth = Math.max(1.5, w * 0.09);
+    ctx.beginPath();
+    ctx.moveTo(hx - w * 0.6, footY - hb * 0.7);
+    ctx.lineTo(hx - w * 0.25, footY - hb * 1.05);
+    ctx.lineTo(hx + w * 0.05, footY - hb * 0.55);
+    ctx.lineTo(hx + w * 0.4, footY - hb * 0.9);
+    ctx.lineTo(hx + w * 0.6, footY - hb * 0.7);
+    ctx.stroke();
+    ctx.fillStyle = "#26231f";
+    ctx.fillRect(hx + w * 0.1, footY - hb * 0.35, Math.max(1.5, w * 0.14), hb * 0.35);
+    const topY = footY - hb * 0.95;
+    for (let i = 0; i < 3; i++) {
+      const ph = (time * 0.35 + i * 0.37 + rnd(40 + i)) % 1;
+      const py = topY - ph * 1.1 * hb * 1.6;
+      const pr = (0.09 + ph * 0.17) * hb * 1.4;
+      const sway = Math.sin(ph * 5 + rnd(44 + i) * TAU) * hb * 0.22;
+      ctx.fillStyle = `rgba(${SMOKE_RGB},${((1 - ph) * 0.42).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(hx + w * 0.2 + sway, py, pr, 0, TAU);
+      ctx.fill();
+    }
+  }
+  function well(ctx, wx, footY, z) {
+    contactShadow(ctx, wx, footY + 1, z * 0.22, z * 0.08);
+    ctx.fillStyle = "#8d8578";
+    ctx.beginPath();
+    ctx.arc(wx, footY - z * 0.1, z * 0.17, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = "#22201c";
+    ctx.beginPath();
+    ctx.arc(wx, footY - z * 0.12, z * 0.09, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = "#5d442c";
+    ctx.fillRect(wx - z * 0.16, footY - z * 0.5, Math.max(1, z * 0.045), z * 0.42);
+    ctx.fillRect(wx + z * 0.115, footY - z * 0.5, Math.max(1, z * 0.045), z * 0.42);
+    ctx.beginPath();
+    ctx.moveTo(wx - z * 0.26, footY - z * 0.48);
+    ctx.lineTo(wx, footY - z * 0.68);
+    ctx.lineTo(wx + z * 0.26, footY - z * 0.48);
+    ctx.closePath();
+    ctx.fillStyle = WOOD_ROOF[1];
+    ctx.fill();
+  }
+  function campfire(ctx, fx, footY, z, time, phase) {
+    contactShadow(ctx, fx, footY + 1, z * 0.24, z * 0.09);
+    ctx.fillStyle = "#7d776c";
+    for (let i = 0; i < 3; i++) {
+      const a = phase * TAU + i / 3 * TAU;
+      ctx.beginPath();
+      ctx.arc(fx + Math.cos(a) * z * 0.17, footY - z * 0.04 + Math.sin(a) * z * 0.06, Math.max(1, z * 0.05), 0, TAU);
+      ctx.fill();
+    }
+    ctx.fillStyle = "#5d4326";
+    ctx.fillRect(fx - z * 0.13, footY - z * 0.1, z * 0.26, Math.max(1, z * 0.05));
+    ctx.fillStyle = "#4a351e";
+    ctx.fillRect(fx - z * 0.09, footY - z * 0.15, z * 0.18, Math.max(1, z * 0.05));
+    const fl = 1 + 0.12 * Math.sin(time * 6.3 + phase * TAU);
+    ctx.fillStyle = "#ff9a3c";
+    ctx.beginPath();
+    ctx.arc(fx, footY - z * 0.2, z * 0.15 * fl, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = "#ffd08a";
+    ctx.beginPath();
+    ctx.arc(fx, footY - z * 0.18, z * 0.08 * fl, 0, TAU);
+    ctx.fill();
+  }
+  var SCENES = {
+    1: [
+      { dx: -1, dy: -0.26, w: 0.6 },
+      { dx: -0.24, dy: -0.44, w: 0.7 },
+      { dx: 0.7, dy: -0.22, w: 0.58 },
+      { dx: 0.14, dy: 0.14, w: 0.52, opt: 1 }
+    ],
+    2: [
+      { dx: -1.2, dy: -0.18, w: 0.62 },
+      { dx: -0.58, dy: -0.46, w: 0.86, barn: 1 },
+      { dx: 0.02, dy: -0.3, w: 0.55 },
+      { dx: 0.6, dy: -0.52, w: 0.66 },
+      { dx: 1.16, dy: -0.12, w: 0.58 },
+      { dx: -0.12, dy: 0.12, w: 0.6 }
+    ],
+    3: [
+      { dx: -1.22, dy: -0.3, w: 0.64 },
+      { dx: -0.55, dy: -0.52, w: 0.72 },
+      { dx: 0.1, dy: -0.34, w: 0.6 },
+      { dx: 0.72, dy: -0.5, w: 0.68 },
+      { dx: 1.2, dy: -0.1, w: 0.56 },
+      { dx: -0.1, dy: 0.12, w: 0.62 }
+    ]
+  };
+  SCENES[4] = [
+    { dx: -1.3, dy: -0.55, kind: "t" },
+    { dx: -0.72, dy: -0.4, w: 0.58 },
+    { dx: -0.05, dy: -0.52, w: 0.66 },
+    { dx: 0.62, dy: -0.36, w: 0.6 },
+    { dx: 1.3, dy: -0.5, kind: "t" },
+    { dx: -1.05, dy: 0.02, w: 0.54 },
+    { dx: -0.28, dy: 0.16, w: 0.62 },
+    { dx: 0.45, dy: -0.02, w: 0.58 },
+    { dx: 1.05, dy: 0.1, w: 0.52 }
+  ];
+  function drawFactionTown(ctx, sx, sy, z, f, s, sim2, opts = {}) {
+    if (!(z > 0) || !f || !s) return;
+    let view = FALLBACK_VIEW;
+    try {
+      view = settlementView(sim2, f, s) || FALLBACK_VIEW;
+    } catch {
+    }
+    const tier = Math.max(0, Math.min(4, view.tier | 0));
+    const walls = Math.max(0, Math.min(2, view.walls | 0));
+    const damaged = !!view.damaged;
+    const bannerV = view.banner | 0;
+    const atWar2 = !!view.atWar;
+    const L = opts.L || null;
+    const night = L && L.tint && L.tint[3] > 0.2 ? typeof L.glow === "number" ? Math.max(0, Math.min(1, L.glow)) : 1 : 0;
+    const winA = night > 0 ? (0.3 + 0.65 * night).toFixed(3) : "0";
+    const time = typeof opts.time === "number" ? opts.time : 0;
+    const ax = sx + z * 0.5;
+    const gy = sy + z;
+    const canBake = typeof document !== "undefined" && !!document.createElement;
+    const bannerImg = () => canBake ? bakeBanner(f.def.color, bannerV, atWar2) : null;
+    if (z < 7) {
+      contactShadow(ctx, ax, gy - z * 0.08, z * 0.7, z * 0.22);
+      ctx.fillStyle = f.def.color;
+      ctx.fillRect(ax - z * 0.35, gy - z * 0.8, z * 0.7, z * 0.8);
+      const far = bannerImg();
+      if (far) ctx.drawImage(far, Math.round(ax - z * 0.06), Math.round(gy - z * 2), Math.round(z * 0.5), Math.round(z * 1.2));
+      else drawBannerLive(ctx, ax, gy, z * 0.45, z * 1.1, f.def.color, bannerV, atWar2);
+      return;
+    }
+    const bx = s.x | 0, by = s.y | 0;
+    const rnd = (k) => hash2(bx * 16 + k * 131 + 7, by * 8 + k * 61 + 3);
+    if (tier === 0) {
+      ctx.fillStyle = "rgba(110,95,72,0.25)";
+      ctx.beginPath();
+      ctx.ellipse(ax, gy - z * 0.05, z * 0.85, z * 0.3, 0, 0, TAU);
+      ctx.fill();
+    } else if (tier < 4) {
+      ctx.fillStyle = "rgba(122,102,72,0.18)";
+      ctx.beginPath();
+      ctx.ellipse(ax, gy - z * 0.12, z * 1.3, z * 0.44, 0, 0, TAU);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = "rgba(196,186,166,0.3)";
+      ctx.fillRect(ax - z * 0.55, gy - z * 0.28, z * 1.1, z * 0.5);
+    }
+    const q = [];
+    if (tier === 0) {
+      const main = "#a5854f", side = "#8a6d3e";
+      q.push({
+        y: gy - z * 0.05,
+        fn: () => {
+          contactShadow(ctx, ax - 0.12 * z, gy + 1, z * 0.8, z * 0.24);
+          ctx.fillStyle = main;
+          ctx.beginPath();
+          ctx.moveTo(ax - 0.72 * z, gy);
+          ctx.lineTo(ax - 0.1 * z, gy - 1.05 * z);
+          ctx.lineTo(ax + 0.45 * z, gy);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = side;
+          ctx.beginPath();
+          ctx.moveTo(ax + 0.28 * z, gy);
+          ctx.lineTo(ax + 0.62 * z, gy - 0.72 * z);
+          ctx.lineTo(ax + 0.98 * z, gy);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = DARK;
+          ctx.fillRect(ax - 0.18 * z, gy - 0.34 * z, z * 0.2, z * 0.34);
+        }
+      });
+      q.push({ y: gy + z * 0.05, fn: () => campfire(ctx, ax + z * 0.85, gy, z, time, rnd(9)) });
+      if (damaged) {
+        q.push({
+          y: gy + z * 0.1,
+          fn: () => ruin(ctx, ax - z * 1, gy, z * 0.5, z * 0.4, time, rnd)
+        });
+      }
+    } else {
+      const slots = SCENES[tier];
+      const live = slots.filter((sl) => !sl.opt || rnd(77) >= 0.35);
+      const nB = live.length;
+      const winN = WIN_N[tier];
+      const winCounts = new Array(nB).fill(0);
+      for (let i = 0; i < winN; i++) winCounts[i % nB]++;
+      const ruinIdx = damaged ? 1 % nB : -1;
+      for (let i = 0; i < nB; i++) {
+        const sl = live[i];
+        const r0 = rnd(i * 4 + 1), r1 = rnd(i * 4 + 2), r23 = rnd(i * 4 + 3);
+        const hx = ax + (sl.dx + (r0 - 0.5) * 0.14) * z;
+        const footY = gy + sl.dy * z;
+        const w = sl.w * z;
+        const hb = (sl.barn ? 0.3 : 0.34 + r1 * 0.1) * z;
+        const rh = w * 0.52;
+        const stone = tier >= 3;
+        const wall = stone ? STONE_WALL[i % 2] : WOOD_WALL[(i + (r0 * 2 | 0)) % 2];
+        const roof = stone ? TILE_ROOF[i % 2] : WOOD_ROOF[(i + 1) % 2];
+        const wc = winCounts[i];
+        const isRuin = i === ruinIdx;
+        q.push({
+          y: footY,
+          fn: () => {
+            if (isRuin) ruin(ctx, hx, footY, w, hb + rh * 0.5, time, rnd);
+            else if (sl.kind === "t") tower(ctx, hx, footY, w * 0.55, hb + rh * 0.9, night, winA, r1);
+            else house(ctx, hx, footY, w, hb, rh, wall, roof, stone, wc > 0 ? night : 0, winA, r1, r23);
+          }
+        });
+      }
+      if (tier === 2) q.push({ y: gy + z * 0.12, fn: () => well(ctx, ax + z * 0.15, gy, z) });
+      if (walls === 1) {
+        for (let i = 0; i < 16; i++) {
+          const a = i / 16 * Math.PI * 2;
+          const px = ax + Math.cos(a) * z * 1.5;
+          const py = gy - z * 0.28 + Math.sin(a) * z * 0.5;
+          const hh = z * (0.34 + rnd(60 + i) * 0.14);
+          q.push({
+            y: py,
+            fn: () => {
+              ctx.fillStyle = i % 2 ? "#7a5a33" : "#6b4d2a";
+              ctx.fillRect(px - z * 0.035, py - hh, z * 0.07, hh);
+            }
+          });
+        }
+      }
+      if (walls === 2) {
+        q.push({
+          y: gy - z * 1.4,
+          fn: () => {
+            ctx.strokeStyle = WALL_STROKE;
+            ctx.lineWidth = Math.max(1.5, z * 0.1);
+            ctx.beginPath();
+            ctx.moveTo(ax - z * 1.5, gy + z * 0.05);
+            ctx.lineTo(ax - z * 1.5, gy - z * 0.95);
+            ctx.lineTo(ax - z * 0.6, gy - z * 1.25);
+            ctx.lineTo(ax + z * 0.7, gy - z * 1.2);
+            ctx.lineTo(ax + z * 1.5, gy - z * 0.9);
+            ctx.lineTo(ax + z * 1.5, gy + z * 0.05);
+            ctx.closePath();
+            ctx.stroke();
+          }
+        });
+        q.push({
+          y: gy + z * 0.3,
+          fn: () => {
+            ctx.fillStyle = "#4a3a28";
+            ctx.fillRect(ax - z * 0.14, gy - z * 0.26, z * 0.28, z * 0.28);
+            ctx.fillStyle = "#5d4a32";
+            ctx.fillRect(ax - z * 0.17, gy - z * 0.34, z * 0.34, z * 0.1);
+          }
+        });
+      }
+    }
+    const img = bannerImg();
+    q.push({
+      y: gy - z * 0.02,
+      fn: () => {
+        if (img) ctx.drawImage(img, Math.round(ax + z * 0.62), Math.round(gy - z * 1.86), Math.round(z * 0.78), Math.round(z * 1.86));
+        else drawBannerLive(ctx, ax + z * 0.92, gy, z * 0.6, z * 1.5, f.def.color, bannerV, atWar2);
+      }
+    });
+    if (tier === 4) {
+      q.push({
+        y: gy - z * 0.01,
+        fn: () => {
+          if (img) ctx.drawImage(img, Math.round(ax - z * 1.32), Math.round(gy - z * 1.31), Math.round(z * 0.55), Math.round(z * 1.31));
+        }
+      });
+    }
+    q.sort((a, b) => a.y - b.y);
+    for (const it of q) it.fn();
+  }
+
   // app/src/render/artpack_list.js
   var AVAILABLE = ["academy", "amphitheater", "aqueduct", "armory", "bank", "barracks", "castle", "clinic", "datacenter", "factory", "farm", "forager", "foundry", "granary", "guild_hall", "hospital", "hunter_lodge", "hut", "lumber", "market", "media_tower", "mill", "mine", "observatory", "palisade", "pasture", "port", "power_plant", "press", "smithy", "solar", "spaceport", "spire", "stock_exchange", "stone_walls", "temple", "treasury", "university", "workshop"];
 
@@ -31114,7 +32140,7 @@ ${s}`, "console");
       ctx.restore();
     }
   };
-  var TAU = Math.PI * 2;
+  var TAU2 = Math.PI * 2;
   function bakeAtlas(q) {
     const detail = q && typeof q.detail === "number" ? q.detail : 1;
     const cv = document.createElement("canvas");
@@ -31134,19 +32160,19 @@ ${s}`, "console");
     const R = 20;
     c.fillStyle = "rgba(0,0,0,0.32)";
     c.beginPath();
-    c.arc(cx, cy + 2.5, R + 1, 0, TAU);
+    c.arc(cx, cy + 2.5, R + 1, 0, TAU2);
     c.fill();
     const g2 = c.createLinearGradient(0, cy - R, 0, cy + R);
     g2.addColorStop(0, mix3(kind.color, 255, 0.28));
     g2.addColorStop(1, mix3(kind.color, 0, 0.22));
     c.fillStyle = g2;
     c.beginPath();
-    c.arc(cx, cy, R, 0, TAU);
+    c.arc(cx, cy, R, 0, TAU2);
     c.fill();
     c.strokeStyle = "rgba(0,0,0,0.55)";
     c.lineWidth = 2.5;
     c.beginPath();
-    c.arc(cx, cy, R - 1.2, 0, TAU);
+    c.arc(cx, cy, R - 1.2, 0, TAU2);
     c.stroke();
     if (detail > 0) {
       c.strokeStyle = "rgba(255,255,255,0.30)";
@@ -31184,7 +32210,7 @@ ${s}`, "console");
     // Человек под запретом: рабочее место есть, человека нет.
     idle(c) {
       c.beginPath();
-      c.arc(0, -7.5, 4, 0, TAU);
+      c.arc(0, -7.5, 4, 0, TAU2);
       c.fill();
       c.beginPath();
       c.moveTo(-6.5, 9);
@@ -31318,9 +32344,9 @@ ${s}`, "console");
   var WEATHER_DEFAULT2 = WEATHER_LIGHT.sun;
   var TOWER_ASPECT = 1.6;
   function facadeRect(dx, dy, dw, dh) {
-    const tower = dh > dw * TOWER_ASPECT;
-    const top = tower ? 0.18 : 0.3;
-    const height = tower ? 0.64 : 0.52;
+    const tower2 = dh > dw * TOWER_ASPECT;
+    const top = tower2 ? 0.18 : 0.3;
+    const height = tower2 ? 0.64 : 0.52;
     return {
       x: dx + dw * 0.2,
       y: dy + dh * top,
@@ -31674,7 +32700,7 @@ ${s}`, "console");
   var BURN_SEC = 12;
   var ALARM_HZ = 5;
   var MAX_EDGES = 4e3;
-  var TAU2 = Math.PI * 2;
+  var TAU3 = Math.PI * 2;
   var ALARM_STYLE = {
     raid: { color: "#ff4d4d", hz: 2.2, prio: 0 },
     // набег
@@ -31753,8 +32779,8 @@ ${s}`, "console");
   }
   function blinkAlpha(time, kind, x, y) {
     const st = ALARM_STYLE[kind] || ALARM_STYLE.raid;
-    const ph = hash2(Math.floor(x), Math.floor(y)) * TAU2;
-    return 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(time * st.hz * TAU2 + ph));
+    const ph = hash2(Math.floor(x), Math.floor(y)) * TAU3;
+    return 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(time * st.hz * TAU3 + ph));
   }
   function collectAlarms(sim2, opts = {}) {
     const limit = opts.limit == null ? 10 : opts.limit;
@@ -32069,7 +33095,7 @@ ${s}`, "console");
         for (const s of f.settlements || []) {
           const px = s.x * rect.scale, py = s.y * rect.scaleY;
           c.beginPath();
-          c.arc(px, py, s.capital ? 3 : 2, 0, TAU2);
+          c.arc(px, py, s.capital ? 3 : 2, 0, TAU3);
           c.fill();
           c.stroke();
         }
@@ -32105,6 +33131,12 @@ ${s}`, "console");
 
   // app/src/render/renderer.js
   var TILE_PX5 = 32;
+  var UNIT_BY_ID3 = Object.fromEntries(UNITS.map((u) => [u.id, u]));
+  function hashSeed(seed, x, y, salt) {
+    let h = x * 374761393 + y * 668265263 + (seed | 0) * 1442695041 + salt * 2246822519 | 0;
+    h = (h ^ h >>> 13) * 1274126177 | 0;
+    return ((h ^ h >>> 16) >>> 0) / 4294967296;
+  }
   var Renderer = class {
     constructor(canvas2) {
       this.canvas = canvas2;
@@ -32127,6 +33159,8 @@ ${s}`, "console");
       this.people = new PeopleSprites(this.quality);
       this.beasts = new AnimalSprites(this.quality);
       this.vstate = /* @__PURE__ */ new WeakMap();
+      this.armyVstate = /* @__PURE__ */ new WeakMap();
+      this.tintCache = /* @__PURE__ */ new WeakMap();
       this.art = new ArtPack();
       this.art.preload();
       this.atmo = new Atmosphere(this.quality);
@@ -32212,18 +33246,25 @@ ${s}`, "console");
       this.terrain.landmarks.drawLive(sim2, ctx, ox, oy, z, cw, ch, this.time);
       if (this.quality.clouds) this.drawClouds(sim2, ctx, ox, oy, z, cw, ch);
       if (sim2.showTerritory) this.drawTerritory(sim2, ctx, ox, oy, z);
+      const lod = lodForZoom(this.quality, this.cam.zoom);
+      const fires = [];
       for (const f of sim2.factions) {
         if (!f.alive) continue;
         for (const s of f.settlements) {
           const sx = ox + s.x * z, sy = oy + s.y * z;
-          if (sx < -60 || sy < -60 || sx > cw + 60 || sy > ch + 60) continue;
-          this.drawFactionSettlement(ctx, sx, sy, z, f, s, sim2);
+          const m = z * 3.5 + 40;
+          if (sx < -m || sy < -m || sx > cw + m || sy > ch + m) continue;
+          drawFactionTown(ctx, sx, sy, z, f, s, sim2, { L, time: this.time });
+          this.collectSettlementFires(fires, sim2, f, s, sx, sy, z, L, lod);
         }
       }
       this.cityLights.begin(sim2, ox, oy, z, cw, ch, L, { zoom: this.cam.zoom, time: this.time });
       this.cityLights.drawGround(ctx);
+      this.drawSettlementFirePools(ctx, fires);
       this.drawSortedEntities(sim2, ctx, ox, oy, z, cw, ch, L);
       this.cityLights.drawWindows(ctx);
+      this.drawSettlementFireFlames(ctx, fires);
+      this.drawArmies(sim2, ctx, ox, oy, z, cw, ch, lod);
       this.select.drawGround(sim2, ctx, ox, oy, z, cw, ch, dtReal);
       this.fx.drawWorld(ctx, ox, oy, z, cw, ch);
       if (sim2.placing) {
@@ -32241,20 +33282,6 @@ ${s}`, "console");
           ctx.textAlign = "center";
           ctx.fillText(g2.reason, sx + size / 2, sy - 6);
         }
-      }
-      if (sim2.raids.warning) {
-        const f = sim2.factions.find((q) => q.id === sim2.raids.from);
-        const from = f && f.settlements[0] ? f.settlements[0] : { x: 0, y: 0 };
-        const c1 = this.worldToScreen(sim2.world.startX, sim2.world.startY);
-        const c2 = this.worldToScreen(from.x, from.y);
-        ctx.strokeStyle = `rgba(255,60,60,${0.5 + 0.3 * Math.sin(this.time * 6)})`;
-        ctx.lineWidth = 3;
-        ctx.setLineDash([8, 6]);
-        ctx.beginPath();
-        ctx.moveTo(c2.x, c2.y);
-        ctx.lineTo(c1.x, c1.y);
-        ctx.stroke();
-        ctx.setLineDash([]);
       }
       if (this.quality.fireflies) this.drawFireflies(sim2, ctx, ox, oy, z, cw, ch, dtReal, L);
       if (this.quality.birds) this.drawBirds(ctx, cw, ch, dtReal, L);
@@ -32395,32 +33422,258 @@ ${s}`, "console");
         Math.round(h)
       );
     }
-    drawFactionSettlement(ctx, sx, sy, z, f, s, sim2) {
-      const col = f.def.color;
-      const n = s.capital ? 5 : 3;
-      for (let i = 0; i < n; i++) {
-        const bx = sx + (i % 3 - 1) * z * 0.8, by = sy + (Math.floor(i / 3) - 0.5) * z * 0.8;
-        ctx.fillStyle = col;
-        ctx.globalAlpha = 0.85;
-        ctx.fillRect(bx - z * 0.25, by - z * 0.25, z * 0.5, z * 0.5);
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = "rgba(0,0,0,0.35)";
-        ctx.fillRect(bx - z * 0.25, by - z * 0.05, z * 0.5, z * 0.3);
+    // ---------------------------------------------------------------------
+    // Ночной свет чужих поселений. city_lights обслуживает только постройки
+    // игрока (sim.buildings), а у фракций свои огни: костёр шатрового лагеря,
+    // факелы у площади и ворот, зарево над свежим пепелищем. Позиции собирает
+    // collectSettlementFires в проходе по поселениям; пятна на земле ложатся до
+    // зданий (см. draw), языки пламени — после прохода по глубине.
+    collectSettlementFires(out, sim2, f, s, sx, sy, z, L, lod) {
+      if (!L || L.glow <= 0.03 || !lod.buildingGlow) return;
+      const view = settlementView(sim2, f, s);
+      if (!view) return;
+      const seed = (sim2.world && sim2.world.seed) | 0 || 31836798;
+      const ax = sx + z * 0.5, gy = sy + z;
+      const a = Math.max(0, Math.min(1, L.glow));
+      const add = (x, y, kind, salt) => out.push({
+        x,
+        y,
+        z,
+        kind,
+        a,
+        phase: hashSeed(seed, (s.x | 0) * 4 + salt, (s.y | 0) * 4 - salt, salt) * 6.283
+      });
+      if (view.tier === 0) {
+        add(ax + z * 0.85, gy, "camp", 3);
+      } else {
+        add(ax - z * 0.8, gy + z * 0.18, "torch", 11);
+        add(ax + z * 0.8, gy + z * 0.18, "torch", 17);
+        if (view.walls === 2) {
+          add(ax - z * 0.34, gy + z * 0.26, "torch", 23);
+          add(ax + z * 0.34, gy + z * 0.26, "torch", 29);
+        }
       }
-      if (s.capital) {
-        ctx.strokeStyle = "#222";
-        ctx.lineWidth = 2;
+      if (view.damaged) add(ax - z * 0.55, gy - z * 0.1, "ruin", 41);
+    }
+    // Пятна света на земле. Ореол — тот же выпеченный glowSprite, что светит из
+    // окон и Шпиля: новых градиентов в кадре нет. Тяжёлая часть гасится вместе с
+    // bloom: на eco/medium слой молчит целиком.
+    drawSettlementFirePools(ctx, fires) {
+      if (!fires.length || !this.quality.bloom) return;
+      const halo = this.glowSprite(true);
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      for (const p of fires) {
+        const fl = 0.85 + 0.15 * Math.sin(this.time * 9 + p.phase);
+        const r = p.z * 1.35 * fl;
+        ctx.globalAlpha = (p.kind === "ruin" ? 0.42 : 0.3) * p.a;
+        ctx.drawImage(halo, p.x - r, p.y - r * 0.72, r * 2, r * 1.44);
+      }
+      ctx.restore();
+    }
+    // Языки пламени. Дёшево (пара кривых Безье на огонь), поэтому живут при
+    // любом пресете: дальний зум уже отсечён гейтом lod.buildingGlow.
+    drawSettlementFireFlames(ctx, fires) {
+      for (const p of fires) {
+        const fl = 0.85 + 0.15 * Math.sin(this.time * 9 + p.phase);
+        const baseY = p.kind === "torch" ? p.y - p.z * 0.34 : p.y;
+        if (p.kind === "torch") {
+          ctx.fillStyle = "#4a3620";
+          ctx.fillRect(p.x - Math.max(1, p.z * 0.04), baseY, Math.max(2, p.z * 0.08), p.z * 0.34);
+        }
+        const w = p.z * 0.18, h = p.z * (p.kind === "camp" ? 0.24 : 0.2);
+        ctx.fillStyle = p.kind === "ruin" ? "#ff7030" : "#ff9a3c";
         ctx.beginPath();
-        ctx.moveTo(sx, sy - z);
-        ctx.lineTo(sx, sy - z * 2.2);
-        ctx.stroke();
-        ctx.fillStyle = col;
+        ctx.moveTo(p.x - w / 2, baseY);
+        ctx.quadraticCurveTo(p.x, baseY - h * 2.1 * fl, p.x + w / 2, baseY);
+        ctx.fill();
+        ctx.fillStyle = "#ffd25a";
         ctx.beginPath();
-        ctx.moveTo(sx, sy - z * 2.2);
-        ctx.lineTo(sx + z * 0.9, sy - z * 1.9);
-        ctx.lineTo(sx, sy - z * 1.6);
+        ctx.moveTo(p.x - w * 0.24, baseY);
+        ctx.quadraticCurveTo(p.x, baseY - h * 1.1 * fl, p.x + w * 0.24, baseY);
         ctx.fill();
       }
+    }
+    // ---------------------------------------------------------------------
+    // Армии на карте. Отряд в ядре — точка с числами; здесь он становится
+    // колонной людей из спрайтового генератора people.js: впереди знаменосец
+    // с флагом стороны, за ним пехота, стрелки и конница (крупнее — верховой
+    // силуэт). Фракционная расцветка — лёгкая тонировка листа, печётся один раз
+    // на пару «лист × цвет». Всё детерминировано от сида: марш задаёт пройденный
+    // путь, личные фазы шага бойцов — хеш клетки.
+    drawArmies(sim2, ctx, ox, oy, z, cw, ch, lod) {
+      const state = sim2.armyState;
+      if (!state || !Array.isArray(state.squads) || !state.squads.length) return;
+      if (!lod.people) return;
+      const seed = (sim2.world && sim2.world.seed) | 0 || 0;
+      const era = Math.max(0, Math.min(9, sim2.eraIndex | 0));
+      const raidId = sim2.war && sim2.war.raid ? sim2.war.raid.squadId : 0;
+      for (const sq of state.squads) {
+        if (!squadAlive(sq)) continue;
+        const sx = ox + sq.x * z, sy = oy + sq.y * z;
+        const m = z * 2.5 + 60;
+        if (sx < -m || sy < -m || sx > cw + m || sy > ch + m) continue;
+        this.drawSquadColumn(sim2, ctx, sq, sx, sy, z, seed, era, raidId);
+      }
+    }
+    // Визуальное состояние отряда: направление марша и пройденный путь. Схема та
+    // же, что у villagerState: фаза шага привязана к пути, а не к номеру кадра —
+    // на паузе колонна замирает, на ускорении шагает чаще. Телепорт (сейв) ног
+    // не крутит.
+    squadMotion(sq) {
+      let st = this.armyVstate.get(sq);
+      if (!st) {
+        st = { x: sq.x, y: sq.y, hx: 1, hy: 0, walk: 0, still: 0 };
+        this.armyVstate.set(sq, st);
+      }
+      const dx = sq.x - st.x, dy = sq.y - st.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 1e-4) {
+        st.walk += d < 1.5 ? d : 0;
+        st.still = 0;
+        st.hx = dx / d;
+        st.hy = dy / d;
+        st.x = sq.x;
+        st.y = sq.y;
+      } else if (st.still < 100) st.still++;
+      return st;
+    }
+    // Цвет стороны для флага и расцветки: игрок золотой (как на миникарте),
+    // фракции — своим цветом из таблицы определений, безымянные рейдеры — сталью.
+    sideColorOf(sim2, side) {
+      if (side === "player") return "#c9a227";
+      const f = Array.isArray(sim2.factions) && sim2.factions.find((q) => q.id === side);
+      return f && f.def ? f.def.color : "#8a8f98";
+    }
+    // Лист спрайтов, подкрашенный цветом фракции. Режим source-atop кладёт цвет
+    // ТОЛЬКО на непрозрачные пиксели силуэта — фон листа остаётся прозрачным,
+    // а одежда читается как форменный цвет стороны. Кэш держится на самом листе
+    // через WeakMap: смена пресета перечинит people.gen, старые листы умрут, и
+    // тонировка пересечётся сама — отдельной инвалидации не нужно.
+    tintedSheet(sheet, color) {
+      let m = this.tintCache.get(sheet);
+      if (!m) {
+        m = /* @__PURE__ */ new Map();
+        this.tintCache.set(sheet, m);
+      }
+      let cv = m.get(color);
+      if (cv) return cv;
+      if (typeof document === "undefined") return sheet.cv;
+      cv = document.createElement("canvas");
+      cv.width = sheet.cv.width;
+      cv.height = sheet.cv.height;
+      const c = cv.getContext("2d");
+      c.drawImage(sheet.cv, 0, 0);
+      c.globalCompositeOperation = "source-atop";
+      c.globalAlpha = 0.3;
+      c.fillStyle = color;
+      c.fillRect(0, 0, cv.width, cv.height);
+      m.set(color, cv);
+      if (m.size > 8) m.delete(m.keys().next().value);
+      return cv;
+    }
+    drawSquadColumn(sim2, ctx, sq, sx, sy, z, seed, era, raidId) {
+      const st = this.squadMotion(sq);
+      const color = this.sideColorOf(sim2, sq.side);
+      let nInf = 0, nRng = 0, nCav = 0;
+      for (const [uid, n] of Object.entries(sq.units || {})) {
+        if (!(n > 0)) continue;
+        const u = UNIT_BY_ID3[uid];
+        if (!u) continue;
+        if (u.role === "cav") nCav += n;
+        else if (u.role === "range") nRng += n;
+        else nInf += n;
+      }
+      const heads = nInf + nRng + nCav;
+      const fig = heads > 0 ? Math.max(3, Math.min(10, Math.ceil(heads / 3))) : 2;
+      const porter = heads === 0;
+      if (sq.id === raidId) {
+        const pulse = 0.5 + 0.5 * Math.sin(this.time * 6);
+        ctx.strokeStyle = `rgba(255,60,60,${(0.32 + 0.34 * pulse).toFixed(3)})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(sx, sy + z * 0.06, z * 0.95, z * 0.42, 0, 0, 7);
+        ctx.stroke();
+      }
+      const tx = Math.floor(sq.x), ty = Math.floor(sq.y);
+      const members = [];
+      for (let i = 0; i < fig; i++) {
+        const row = i === 0 ? 0 : i + 1 >> 1;
+        const latK = i === 0 ? 0 : i % 2 ? -1 : 1;
+        const lat = latK * (0.3 + 0.14 * hashSeed(seed, tx + i, ty, 1 + i));
+        const back = row * 0.52 + (i ? 0.1 * hashSeed(seed, tx, ty + i, 31 + i) : 0);
+        const along = 0.55 - back;
+        const mx = sx + st.hx * along - st.hy * lat;
+        const my = sy + st.hy * along + st.hx * lat;
+        const r = fig === 1 ? 0 : i / fig;
+        let prof, scale = 0.34;
+        if (porter) prof = "trader";
+        else if (r < nInf / heads) prof = "soldier";
+        else if (r < (nInf + nRng) / heads) {
+          prof = "hunter";
+          scale = 0.32;
+        } else {
+          prof = "soldier";
+          scale = 0.46;
+        }
+        if (i === 0 && !porter) scale *= 1.1;
+        const look = hashSeed(seed, tx * 3 + i, ty * 3 - i, 9) * 3 | 0;
+        const sh = this.people.sheet(era, prof, look);
+        const h = Math.max(8, z * scale);
+        const w = h * (sh.fw / sh.fh);
+        const ph = hashSeed(seed, tx + i * 7, ty - i * 13, 5);
+        const frame2 = st.still > 2 ? 0 : ((st.walk / 0.62 * 4 + ph * 4 | 0) % 4 + 4) % 4;
+        const dirIdx = Math.abs(st.hx) > Math.abs(st.hy) * 1.2 ? st.hx > 0 ? 2 : 1 : st.hy > 0 ? 0 : 3;
+        members.push({ head: i === 0, mx, my, h, w, frame: frame2, dirIdx, sh });
+      }
+      members.sort((a, b) => a.my - b.my);
+      let minY = sy;
+      for (const m of members) {
+        this.shadows.unit(ctx, m.mx, m.my, m.w, m.h);
+        ctx.drawImage(
+          this.tintedSheet(m.sh, color),
+          m.frame * m.sh.fw,
+          m.dirIdx * m.sh.fh,
+          m.sh.fw,
+          m.sh.fh,
+          Math.round(m.mx - m.w / 2),
+          Math.round(m.my - m.h * 0.955),
+          Math.round(m.w),
+          Math.round(m.h)
+        );
+        if (m.my - m.h < minY) minY = m.my - m.h;
+      }
+      const bearer = members.find((mm) => mm.head);
+      if (bearer && !porter) {
+        const sign4 = st.hx >= 0 ? 1 : -1;
+        const px = bearer.mx, footY = bearer.my - bearer.h * 0.9;
+        const topY = footY - z * 0.95;
+        ctx.strokeStyle = "#4a3620";
+        ctx.lineWidth = Math.max(1, z * 0.05);
+        ctx.beginPath();
+        ctx.moveTo(px, footY);
+        ctx.lineTo(px, topY);
+        ctx.stroke();
+        const wob = Math.sin(this.time * 3 + hashSeed(seed, tx, ty, 77) * 6.283) * z * 0.07;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(px, topY);
+        ctx.lineTo(px + sign4 * z * 0.52, topY + z * 0.13 + wob);
+        ctx.lineTo(px, topY + z * 0.3);
+        ctx.closePath();
+        ctx.fill();
+      }
+      const power = squadPower(sq, tileAt(sim2.world, sq.x, sq.y));
+      const frac = Math.max(0, Math.min(1, power / (power + 20)));
+      const bw = Math.max(22, z * 0.8), bh = 3;
+      const bxx = sx - bw / 2, byy = minY - 7;
+      ctx.fillStyle = "rgba(15,12,9,0.72)";
+      ctx.fillRect(bxx - 1, byy - 1, bw + 2, bh + 2);
+      ctx.fillStyle = frac > 0.6 ? "#7de37d" : frac > 0.3 ? "#e8c14a" : "#e37d7d";
+      ctx.fillRect(bxx, byy, Math.round(bw * frac), bh);
+      ctx.strokeStyle = "rgba(255,255,255,0.16)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(bxx - 1.5, byy - 1.5, bw + 3, bh + 3);
     }
     drawTerritory(sim2, ctx, ox, oy, z) {
       const cw = this.canvas.width / this.dpr, ch = this.canvas.height / this.dpr;
@@ -33363,6 +34616,208 @@ ${s}`, "console");
       const meta = RES_META3[r];
       return `${meta ? meta.icon : r}${Math.ceil(v * m)}`;
     }).join(" ") || "—";
+  }
+
+  // app/src/ui/menuskin.js
+  var import_meta = {};
+  var ICONS = {
+    build: '<path d="M14.6 3.8l5.6 5.6-3 3-5.6-5.6z"/><path d="M12 7L3.5 15.5V21h5.5L17 12.5"/>',
+    research: '<path d="M9 3h6"/><path d="M10 3v5l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.6 14h8.8"/>',
+    army: '<path d="M3.5 3.5l16.5 16.5"/><path d="M20.5 3.5L4 20"/><path d="M7 3H3.5v3.5"/><path d="M17 3h3.5v3.5"/>',
+    diplo: '<path d="M6 21V4"/><path d="M6 4h11.5l-2.4 3.5 2.4 3.5H6"/>',
+    market: '<path d="M12 4v16"/><path d="M7 20h10"/><path d="M5 7h14"/><path d="M7.2 7l-3 6a3.1 3.1 0 0 0 6.2 0z"/><path d="M16.8 7l-3 6a3.1 3.1 0 0 0 6.2 0z"/>',
+    people: '<circle cx="9" cy="8" r="3.2"/><path d="M3.4 19.5a5.6 5.6 0 0 1 11.2 0"/><path d="M15.6 5.2a3.2 3.2 0 0 1 0 5.6"/><path d="M17 14.4a5.6 5.6 0 0 1 3.6 5.1"/>',
+    industry: '<path d="M3.5 20.5V9.5l5.5 3.5v-3.5l5.5 3.5v-3.5l6 3.7v7.3z"/><path d="M6.8 16.9h.01"/><path d="M10.8 16.9h.01"/>',
+    war: '<path d="M12 3.5l7 2.7v5.4c0 4.6-2.9 7.6-7 9.4-4.1-1.8-7-4.8-7-9.4V6.2z"/>',
+    politics: '<path d="M3.5 21h17"/><path d="M3.5 10.5L12 4l8.5 6.5z"/><path d="M5.5 10.5V18"/><path d="M9.8 10.5V18"/><path d="M14.2 10.5V18"/><path d="M18.5 10.5V18"/><path d="M3.5 18h17"/>',
+    empire: '<path d="M5 21V6h2.4v2.4h2.2V6h4.8v2.4h2.2V6H19v15z"/><path d="M9.8 21v-3.8a2.2 2.2 0 0 1 4.4 0V21"/><path d="M5 10.5h14"/>',
+    labor: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+    goals: '<circle cx="12" cy="12" r="8.4"/><circle cx="12" cy="12" r="4.4"/><circle cx="12" cy="12" r="0.8"/>',
+    memory: '<path d="M2.8 4.8h6.4A2.8 2.8 0 0 1 12 7.6v12.6a2.4 2.4 0 0 0-2.4-2H2.8z"/><path d="M21.2 4.8h-6.4A2.8 2.8 0 0 0 12 7.6v12.6a2.4 2.4 0 0 1 2.4-2h6.8z"/>',
+    log: '<path d="M8.5 6h12"/><path d="M8.5 12h12"/><path d="M8.5 18h12"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/>',
+    // вкладки, добавленные поверх этого списка другими ветками разработки
+    dynasty: '<circle cx="12" cy="8" r="3.4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0z"/><path d="M12 3v2"/>'
+  };
+  function svg(id) {
+    return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[id] || ""}</svg>`;
+  }
+  function ensureCss() {
+    const already = [...document.querySelectorAll('link[rel="stylesheet"], style[id]')].some((l) => l.href && l.href.indexOf("menuskin.css") !== -1 || l.id === "msk-inline");
+    if (already) return;
+    let href = "";
+    try {
+      href = new URL("menuskin.css", import_meta.url).href;
+    } catch {
+      return;
+    }
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = href;
+    document.head.appendChild(link);
+  }
+  var DESKTOP_GROUPS = [
+    { tabs: ["build", "research", "people"] },
+    { cap: "Экономика", tabs: ["market", "industry", "labor"] },
+    { cap: "Война", tabs: ["army", "war"] },
+    { cap: "Прочее", tabs: ["diplo", "politics", "empire", "goals", "memory", "log"] }
+  ];
+  function iconize(button) {
+    if (!button || button.dataset.mskIc) return;
+    button.dataset.mskIc = "1";
+    const id = button.dataset.tab;
+    if (!id || !ICONS[id]) return;
+    const ic = button.querySelector(".ic");
+    if (ic) {
+      ic.classList.add("msk-tic");
+      ic.innerHTML = svg(id);
+    } else {
+      const s = document.createElement("span");
+      s.className = "msk-tic";
+      s.setAttribute("aria-hidden", "true");
+      s.innerHTML = svg(id);
+      button.insertBefore(s, button.firstChild);
+    }
+  }
+  function decorateTabs() {
+    const sp = document.getElementById("sidePanel");
+    const sh = document.getElementById("sheet");
+    if (sp) sp.classList.add("msk-root");
+    if (sh) sh.classList.add("msk-root");
+    const st = document.getElementById("sideTabs");
+    const sht = document.getElementById("sheetTabs");
+    if (st && !st.dataset.msk && st.children.length) {
+      st.dataset.msk = "1";
+      const byTab = {};
+      for (const b of [...st.children]) if (b.dataset && b.dataset.tab) byTab[b.dataset.tab] = b;
+      const grouped = new Set(DESKTOP_GROUPS.flatMap((g2) => g2.tabs));
+      const last2 = DESKTOP_GROUPS[DESKTOP_GROUPS.length - 1];
+      for (const t of Object.keys(byTab)) if (!grouped.has(t) && !last2.tabs.includes(t)) last2.tabs.push(t);
+      const frag = document.createDocumentFragment();
+      for (const g2 of DESKTOP_GROUPS) {
+        if (g2.cap) {
+          const sep = document.createElement("div");
+          sep.className = "msk-sep";
+          sep.setAttribute("aria-hidden", "true");
+          const span = document.createElement("span");
+          span.textContent = g2.cap;
+          sep.appendChild(span);
+          frag.appendChild(sep);
+        }
+        for (const t of g2.tabs) if (byTab[t]) frag.appendChild(byTab[t]);
+      }
+      st.appendChild(frag);
+    }
+    if (sht && !sht.dataset.msk && sht.children.length) sht.dataset.msk = "1";
+    for (const host of [st, sht]) {
+      if (!host) continue;
+      for (const b of host.children) iconize(b);
+    }
+  }
+  var RES_META4 = {
+    "🍞": ["food", "Еда"],
+    "🪵": ["wood", "Дерево"],
+    "🪨": ["stone", "Камень"],
+    "⚙": ["steel", "Сталь"],
+    "🪙": ["gold", "Золото"],
+    "📜": ["knowledge", "Знания"]
+  };
+  var COST_RE = /([🍞🪵🪨⚙🪙📜])\s*(\d+(?:\.\d+)?)(?:\s*\/\s*(\d+))?|(\d+(?:\.\d+)?)\s*([🍞🪵🪨⚙🪙📜])/gu;
+  function buildChip(resId, resName, num14, denom) {
+    const chip = document.createElement("span");
+    chip.className = `msk-res msk-${resId}`;
+    chip.title = resName;
+    const dot = document.createElement("i");
+    dot.setAttribute("aria-hidden", "true");
+    chip.appendChild(dot);
+    chip.appendChild(document.createTextNode(num14 + (denom ? "/" + denom : "")));
+    return chip;
+  }
+  function decorateCost(rootEl) {
+    if (!rootEl || !rootEl.querySelectorAll) return;
+    for (const el of rootEl.querySelectorAll(".cost:not([data-mskc])")) {
+      try {
+        el.dataset.mskc = "1";
+        const raw = el.textContent.replace(/\uFE0F/g, "");
+        COST_RE.lastIndex = 0;
+        const parts = [];
+        let m, last2 = 0, found = false;
+        while ((m = COST_RE.exec(raw)) !== null) {
+          found = true;
+          if (m.index > last2) parts.push(document.createTextNode(raw.slice(last2, m.index)));
+          if (m[1]) {
+            const [rid, rname] = RES_META4[m[1]];
+            parts.push(buildChip(rid, rname, m[2], m[3]));
+          } else {
+            const [rid, rname] = RES_META4[m[5]];
+            parts.push(buildChip(rid, rname, m[4], null));
+          }
+          last2 = COST_RE.lastIndex;
+        }
+        if (!found) continue;
+        if (last2 < raw.length) parts.push(document.createTextNode(raw.slice(last2)));
+        el.textContent = "";
+        for (const p of parts) el.appendChild(p);
+      } catch {
+      }
+    }
+  }
+  function decoratePanels(sc, shc) {
+    try {
+      decorateCost(sc);
+    } catch {
+    }
+    try {
+      decorateCost(shc);
+    } catch {
+    }
+  }
+  function start() {
+    ensureCss();
+    const sc = document.getElementById("sideContent");
+    const shc = document.getElementById("sheetContent");
+    decorateTabs();
+    decoratePanels(sc, shc);
+    if (window.MutationObserver && sc && shc) {
+      const mo = new MutationObserver(() => decoratePanels(sc, shc));
+      mo.observe(sc, { childList: true, subtree: true });
+      mo.observe(shc, { childList: true, subtree: true });
+      for (const host of ["sideTabs", "sheetTabs"]) {
+        const el = document.getElementById(host);
+        if (el) {
+          const tmo = new MutationObserver(() => {
+            requestAnimationFrame(() => {
+              try {
+                decorateTabs();
+              } catch {
+              }
+            });
+          });
+          tmo.observe(el, { childList: true });
+        }
+      }
+    }
+    let lastSim;
+    setInterval(() => {
+      try {
+        const F = window.__frontier;
+        if (F && F.sim !== lastSim) {
+          lastSim = F.sim;
+          decoratePanels(sc, shc);
+        }
+        decorateTabs();
+      } catch {
+      }
+    }, 2e3);
+  }
+  function boot(attempt) {
+    attempt = attempt || 0;
+    const ok2 = document.getElementById("sideTabs") && document.getElementById("sideTabs").querySelectorAll("button[data-tab]").length > 0;
+    if (ok2 || attempt > 100) start();
+    else setTimeout(() => boot(attempt + 1), 100);
+  }
+  if (!window.__frontierMenuSkin) {
+    window.__frontierMenuSkin = { version: 1 };
+    boot();
   }
 
   // app/src/ui/hud.js
@@ -35478,7 +36933,7 @@ ${out}`;
     };
   }
   var PREFS_KEY = "frontier.audio.v1";
-  var ERA_SCALE = [
+  var ERA_SCALE2 = [
     [0, 3, 5, 7, 10],
     // каменный
     [0, 3, 5, 7, 10],
@@ -35964,7 +37419,7 @@ ${out}`;
         }
         // Технология: восходящий арпеджио по ладу эпохи + «искра».
         case "tech": {
-          const sc = ERA_SCALE[Math.min(9, era)];
+          const sc = ERA_SCALE2[Math.min(9, era)];
           const type = ERA_TIMBRE[Math.min(9, era)];
           for (let i = 0; i < 4; i++) {
             const st = sc[i % sc.length] + 12 * Math.floor(i / sc.length);
@@ -35977,7 +37432,7 @@ ${out}`;
         // через колокола к фабричному гудку и синтезатору.
         case "era": {
           this._duck(3, 0.2);
-          const sc = ERA_SCALE[Math.min(9, era)];
+          const sc = ERA_SCALE2[Math.min(9, era)];
           const type = ERA_TIMBRE[Math.min(9, era)];
           if (era <= 2) {
             this._drum(0, 0.26);
@@ -36244,7 +37699,7 @@ ${out}`;
       const now2 = this.ctx.currentTime;
       if (now2 < this._musicNext) return;
       const era = Math.min(9, this.world.eraIndex);
-      const sc = ERA_SCALE[era], type = ERA_TIMBRE[era];
+      const sc = ERA_SCALE2[era], type = ERA_TIMBRE[era];
       const night = this._phase() === "night";
       const root = 48 + (night ? -5 : 0);
       const deg = Math.floor(this._rnd() * sc.length);
