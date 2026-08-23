@@ -9,6 +9,9 @@ import { BrowserSave } from './save/saveSystem.js';
 import { AudioEngine } from './ui/audio.js';
 import { ASSET_COVER, ASSET_VICTORY, ASSET_MUSIC } from './ui/assets.js';
 import { tileAt } from './core/world.js';
+// Командный док и верхняя полоса ресурсов W3: сами ставят свой DOM и CSS.
+import './ui/dock.js';
+import './ui/topbar.js';
 
 const canvas = document.getElementById('game');
 const saveSys = new BrowserSave();
