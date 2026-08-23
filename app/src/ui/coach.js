@@ -17,6 +17,9 @@
 // но ничего в ядре не меняет. Своя разметка и свои стили — чужие файлы не
 // трогает вообще.
 import { BUILDINGS, TECHS, RES, SEASONS } from '../core/data.js';
+// Контент первых 10 минут живёт отдельным файлом: движок (подсветка, прогресс,
+// отложенные шаги) остаётся здешним, а уроки и их проверки — тамошними.
+import { TUTORIAL10, tutorialProgress } from './tutorial10.js';
 
 const LS_KEY = 'frontier_coach2';        // прогресс обучения
 const LS_LEGACY = 'frontier_coached';    // флаг старого онбординга — гасим его
@@ -164,6 +167,24 @@ const STEPS = [
     done: (c) => c.nearNeighbour() || !!document.querySelector('#modalBox [data-act="gift"], #modalBox [data-act="peace"]'),
   },
 ];
+
+// Шаги первых 10 минут: контент — ui/tutorial10.js, механика — здешняя.
+for (const t of TUTORIAL10) {
+  if (STEPS.some(s => s.id === t.id)) continue;
+  STEPS.push({
+    id: t.id, title: t.title, text: t.hint,
+    done: (c) => { try { return !!t.check(c.sim); } catch { return false; } },
+    // skipIf — НЕ «потерял смысл навсегда»: шапка tutorial10 обещает «шаг
+    // прозрачен и всплывает сам, когда условие отпустит». Родной moot вычеркнул
+    // бы урок навсегда (doneIds.add прямо в nextStep), поэтому отображаем его
+    // в ready с отрицанием — так же, как здесь отложен родный шаг про склад.
+    ...(t.skipIf ? { ready: (c) => { try { return !t.skipIf(c.sim); } catch { return false; } } } : {}),
+  });
+}
+
+// Снимок сценария для тестов моста (app/tests/test-tutorial-bridge.mjs):
+// это тот же массив, который листает nextStep(), включая дописанные уроки.
+export const COACH_STEPS = STEPS;
 
 // ----------------------------------------------------------- напоминания ---
 // Каждое правило возвращает {text, type, target, key} или null. key разделяет
@@ -654,6 +675,20 @@ export class Coach {
 
   renderCard(step, ok) {
     const idx = STEPS.indexOf(step) + 1;
+    // Для уроков первых 10 минут счётчик ведёт tutorialProgress — та же чистая
+    // функция, что и в тестах: карточка не может разойтись с прогрессом, а
+    // прозрачные (skipIf) шаги не сбивают нумерацию. Родные шаги коуча
+    // остаются на прежнем счёте по массиву STEPS.
+    let counter = `Шаг ${idx} из ${STEPS.length}`;
+    if (TUTORIAL10.some(t => t.id === step.id)) {
+      const p = this.safe(() => tutorialProgress(this.sim), null);
+      if (p) {
+        // На кадре «✓ Готово» текущий шаг уже закрыт и вошёл в p.done —
+        // показываем его собственный номер, а не следующий.
+        const n = ok ? Math.max(1, Math.min(p.done, p.total)) : Math.min(p.done + 1, p.total);
+        counter = `Шаг ${n} из ${p.total}`;
+      }
+    }
     let text = typeof step.text === 'function' ? this.safe(() => step.text(this), '') : step.text;
     if (step.build && this.sim.placing) {
       text = this.sim.placing.valid
@@ -663,7 +698,7 @@ export class Coach {
     const note = step.note ? this.safe(() => step.note(this), '') : '';
     const dots = STEPS.map(s => `<span class="${this.doneIds.has(s.id) ? 'on' : s === step ? 'cur' : ''}"></span>`).join('');
     const card = this._el.card;
-    const html = `<div class="c-head"><span class="c-step">Шаг ${idx} из ${STEPS.length}</span>
+    const html = `<div class="c-head"><span class="c-step">${counter}</span>
         <button class="c-skip">Пропустить обучение</button></div>
       <div class="c-title">${ok ? '✓ Готово' : step.title}</div>
       <div class="c-text">${ok ? 'Отлично. Дальше.' : text}</div>
