@@ -205,6 +205,19 @@ export class Simulation {
       && BUILDINGS[b.id].out && BUILDINGS[b.id].out.wood);
   }
 
+  // Голодный кризис имеет смысл, только если склад вообще способен вместить
+  // запас. Порог «пяти дней еды» растёт вместе с населением: при 58 жителях он
+  // превышает базовую крышу амбаров (200), и город с ПОЛНЫМ складом навсегда
+  // считался голодающим — мастеров разгоняли со рабочих мест, стройка оставалась
+  // без рук, рост молча вставал (софтлок на 57+). Еда под самой крышей кризисом
+  // не считается; почему остановился рост, объясняет отдельное событие в
+  // летописи — см. onNewDay.
+  inFoodCrisis() {
+    if (!this.villagers.length) return false;
+    if (this.res.food >= this.resCap.food - 1e-9) return false;
+    return this.res.food < this.villagers.length * EAT_PER_DAY * 5;
+  }
+
   // ---------- Фракции ----------
   spawnFactions() {
     const count = Math.min(this.factionCount, FACTIONS.length);
@@ -558,6 +571,8 @@ export class Simulation {
     this.dayTime += dtDays;
     while (this.dayTime >= 1) { this.dayTime -= 1; this.day++; this.eraDay++; this.onNewDay(); }
     this.tickVillagers(dtDays);
+    // Роботы работают сами, без жителей (см. tickWorkerless).
+    this.tickWorkerless(dtDays);
     this.tickAnimals(dtDays);
     this.tickConstruction(dtDays);
     this.tickTraining(dtDays);
@@ -578,7 +593,7 @@ export class Simulation {
       // житель на рабочем месте: производит непрерывно
       if (v.atWork) {
         const b = v.target.b;
-        const crisis = this.res.food < this.villagers.length * EAT_PER_DAY * 5;
+        const crisis = this.inFoodCrisis();
         const def = BUILDINGS[b.id];
         if (b.destroyed || (crisis && !(def.out && def.out.food))) { this.release(v); continue; }
         this.produceAt(b, dt, happyMult);
@@ -603,10 +618,30 @@ export class Simulation {
     const def = BUILDINGS[b.id];
     const out = def.out || {};
     const gather = this.globalMult('gather') * WEATHER[this.weather].gather;
+    // Погода входит в выработку ОДИН раз, профильным коэффициентом: у поля это
+    // WEATHER.farm, у ручной добычи и промысла — WEATHER.gather. БЫЛО: базовый
+    // mult уже нёс погодный gather, а ветка фермы ниже домножала ещё и на
+    // WEATHER.farm — двойное перемножение (дождь 0.85×1.15≈0.98 вместо
+    // обещанных +15%, снег 0.7×0.4=0.28 вместо 0.4). Отменено для ферм:
+    // погодная надбавка gather им больше не достаётся, только технологии
+    // труда из globalMult('gather').
+    const isFarm = !!(out.food && b.id === 'farm');
+    // Аура соседних зданий (кузница def.aura.gather: +10% добычи в радиусе 2).
+    // БЫЛО: из поля aura работала только мельница для ферм (отдельный цикл в
+    // ветке фермы ниже), а кузница не усиливала никого — desc обещал +10%,
+    // которых не существовало. Отменено: аура читается у всех соседей; себя
+    // здание не усиливает, а знания/золото/сталь считаются своими множителями
+    // и аур добычи не читают (их ветки ниже перезаписывают mult).
+    let auraGather = 1;
+    for (const m of this.buildings) {
+      if (m === b || !m.done || m.destroyed) continue;
+      const a = BUILDINGS[m.id].aura;
+      if (a && a.gather && Math.hypot(m.x - b.x, m.y - b.y) <= a.r) auraGather *= a.gather;
+    }
     // Ветхое здание работает хуже целого: ниже трети прочности — вполсилы.
     // Это единственное место, где износ виден игроку числом, а не картинкой,
     // и именно оно делает ремонт осмысленным, а не украшением.
-    let mult = gather * happyMult * wearWorkMult(this, b);
+    let mult = (isFarm ? this.globalMult('gather') : gather) * happyMult * wearWorkMult(this, b) * auraGather;
     if (out.knowledge) mult = this.globalMult('knowledge') * happyMult;
     if (out.gold) mult = this.globalMult('gold') * happyMult;
     if (out.steel) mult = this.globalMult('industry') * happyMult;
@@ -644,6 +679,21 @@ export class Simulation {
     }
   }
 
+  // Здания без рабочих мест (def.workers === 0, Робозавод) раньше не давали
+  // ничего: assignJob их пропускает («!def.workers»), а produceAt зывал только
+  // житель, занявший место в tickVillagers. Теперь работают сами — люди не
+  // нужны, но всё остальное как у всех: сырьё (def.consume), потолки склада,
+  // износ и погода считаются тем же produceAt. passive-здания (Сокровищница)
+  // исключены: их золото начисляет onNewDay, здесь вышло бы дважде. Петли нет —
+  // один проход по конечному списку готовых зданий за тик.
+  tickWorkerless(dt) {
+    for (const b of this.doneBuildings()) {
+      const def = BUILDINGS[b.id];
+      if (def.workers !== 0 || !def.out || def.passive) continue;
+      this.produceAt(b, dt, 1); // роботы не унывают и не болеют: happyMult = 1
+    }
+  }
+
   assignJob(v) {
     v.busy = 0;
     // Сообщаем о древесном кризисе один раз за эпизод: молчаливый тупик —
@@ -659,7 +709,7 @@ export class Simulation {
     const site = this.buildings.find(b => !b.done && !b.destroyed && b.workers.length < BUILDERS_PER_SITE);
     if (site) { v.job = 'build'; v.target = { kind: 'build', b: site, x: site.x, y: site.y }; site.workers.push(v); return; }
     // 1.5 Продовольственный кризис: еда важнее всего
-    const foodCrisis = this.res.food < this.villagers.length * EAT_PER_DAY * 5;
+    const foodCrisis = this.inFoodCrisis();
     // 2. Работа в здании по приоритетам труда
     const catPrio = foodCrisis ? { ...this.labor, food: 99 } : this.labor;
     const jobs = [];
@@ -910,6 +960,9 @@ export class Simulation {
     // еда
     // Народ, переживший голод, ест скупее: память о беде — это не только
     // слова в летописи, но и меньше зерна со склада каждый день.
+    // Полноту амбаров фиксируем ДО трапезы: после неё склад уже неполон, и
+    // проверка крыши ниже была бы всегда ложной.
+    const foodWasAtRoof = pop > 0 && this.res.food >= this.resCap.food - 1e-9;
     const eat = pop * EAT_PER_DAY * (this.weather === 'snow' ? 1.25 : 1) * memoryEatMult(this);
     this.res.food -= eat;
     // содержание армии
@@ -963,6 +1016,18 @@ export class Simulation {
         this.spawnVillager(c.x + this.rng.range(-1, 1), c.y + this.rng.range(-1, 1));
         this.addLog('Родился новый житель!', 'good');
       }
+    }
+    // Амбары под крышу, а трёхдневного запаса на нового жителя всё равно не
+    // набрать: рост останавливается сам, и это надо называть словами — иначе
+    // молчаливый потолок выглядит как поломка, а игрок строит не то. Один раз
+    // за эпизод; снимается, когда склад освободился или потолок вырос.
+    const foodRoofBlocked = happy > 45 && pop < this.housingCap()
+      && foodWasAtRoof && pop * 3 >= this.resCap.food;
+    if (foodRoofBlocked && !this._foodRoofShown) {
+      this._foodRoofShown = true;
+      this.addChronicle(`Амбары полны под крышу (${Math.round(this.resCap.food)}🍞) — запаса на новых жителей не напастись, рост остановился. Нужен Амбар.`);
+    } else if (!foodRoofBlocked && this._foodRoofShown) {
+      this._foodRoofShown = false;
     }
     // эмиграция при несчастье
     if (happy < 35) {
@@ -1746,6 +1811,36 @@ export class Simulation {
       relations: this.relations, relFactors: this.relFactors, treaties: this.treaties, wars: this.wars, aiWars: this.aiWars,
       market: this.market, caravanTimer: this.caravanTimer,
       mission: this.mission, moonDone: this.moonDone, marsDone: this.marsDone,
+      // Висящее событие с выбором — включая самодельные «требование дани» и
+      // «предложение договора» с _tributeFid/_treatyFid: раньше при загрузке
+      // оно испарялось, и игрок терял окно решения.
+      pendingEvent: this.pendingEvent ? { ...this.pendingEvent } : null,
+      eventCooldown: this.eventCooldown,
+      farmPenaltyDays: this.farmPenaltyDays,   // «Наводнение»: поле не родит N дней
+      dcPenaltyDays: this.dcPenaltyDays,       // «Солнечная буря»: дата-центры вполсилы
+      // Мирные пакты после войны (_peacePacts[fid] = день окончания). Пустой
+      // объект пишем как null: deserialize разворачивает null обратно в {},
+      // и круг остаётся бит-в-бит.
+      peacePacts: (this._peacePacts && Object.keys(this._peacePacts).length) ? { ...this._peacePacts } : null,
+      // Однодневные кэши отчётов связей: happiness() и панели читают их ДО
+      // первого newDay после загрузки — пустые отчёты означали сутки неверного
+      // счастья и пустых панелей. Ключи совпадают с полями sim.sys один в один.
+      dayReports: this.sys ? {
+        winterReport: this.sys.winterReport ?? null,
+        borderStats: this.sys.borderStats ?? null,
+        ecoLinks: this.sys.ecoLinks ?? null,
+        memLinks: this.sys.memLinks ?? null,
+        buildLinks: this.sys.buildLinks ?? null,
+        masterLinks: this.sys.masterLinks ?? null,
+        herdsReport: this.sys.herdsReport ?? null,
+        intelLinks: this.sys.intelLinks ?? null,
+        nbrLinks: this.sys.nbrLinks ?? null,
+        indLinks: this.sys.indLinks ?? null,
+        warLinks: this.sys.warLinks ?? null,
+        dynLinks: this.sys.dynLinks ?? null,
+        betrayals: this.sys.betrayals ?? [],
+        _repelledSeen: this.sys._repelledSeen ?? null,
+      } : null,
       sys: systemsSerialize(this),
       rngState: this.rng.getState(),
       log: this.log.slice(-80),
@@ -1783,6 +1878,16 @@ export class Simulation {
     sim.treaties = data.treaties || []; sim.wars = data.wars || []; sim.aiWars = data.aiWars || [];
     sim.market = data.market || sim.market; sim.caravanTimer = data.caravanTimer ?? 15;
     sim.mission = data.mission; sim.moonDone = data.moonDone; sim.marsDone = data.marsDone;
+    // События, пакты, штрафы и дневные кэши отчётов (v4). Старые сейвы v3 этих
+    // полей не писали — здесь честные дефолты: висящих событий и пакетов не
+    // было, штрафы нулевые, отчёты связи досчитаются к вечеру первого дня.
+    sim.pendingEvent = (data.pendingEvent && data.pendingEvent.id && data.pendingEvent.choice)
+      ? { ...data.pendingEvent } : null;
+    sim.eventCooldown = data.eventCooldown ?? 10;
+    sim.farmPenaltyDays = data.farmPenaltyDays ?? 0;
+    sim.dcPenaltyDays = data.dcPenaltyDays ?? 0;
+    sim._peacePacts = data.peacePacts || {};
+    if (data.dayReports && typeof data.dayReports === 'object' && sim.sys) Object.assign(sim.sys, data.dayReports);
     systemsRestore(sim, data.sys);
     sim.log = data.log || [];
     for (const f of sim.factions) {
@@ -1793,7 +1898,7 @@ export class Simulation {
     return { ok: true, sim };
   }
 
-  // Миграция v1/v2 → v3: прогресс игрока сохраняется полностью
+  // Миграция v1/v2/v3 → v4: прогресс игрока сохраняется полностью
   static migrate(old) {
     const d = JSON.parse(JSON.stringify(old));
     // карта старых эпох (9, без digital): 0..6 совпадают, 7→modern(7), 8→future(9)
@@ -1807,6 +1912,18 @@ export class Simulation {
     if (d.version <= 2) {
       // фракции появятся заново от сида
       d.factions = null; d.relations = null; d.treaties = null; d.wars = null;
+    }
+    if (d.version <= 3) {
+      // v4 добавил pendingEvent/eventCooldown, штрафы событий (farm/dc),
+      // мирные пакты и дневные кэши отчётов связей. Сейвы v3 этого не писали:
+      // событие не висит, пактов нет ({} — deserialize развернёт как «нет»),
+      // штрафы нулевые, отчёты досчитаются к вечеру первого дня.
+      d.pendingEvent = d.pendingEvent ?? null;
+      d.eventCooldown = d.eventCooldown ?? 10;
+      d.farmPenaltyDays = d.farmPenaltyDays ?? 0;
+      d.dcPenaltyDays = d.dcPenaltyDays ?? 0;
+      d.peacePacts = d.peacePacts ?? null;
+      if (d.dayReports === undefined) d.dayReports = null;
     }
     if (!d.spire) d.spire = { placed: false, stage: 0, progress: 0, invested: SPIRE_STAGES.map(() => ({ food: 0, wood: 0, stone: 0, steel: 0, gold: 0, knowledge: 0 })) };
     if (!d.chronicle) d.chronicle = [{ day: 0, era: 0, text: 'Основание поселения (мигрированный сейв).' }];

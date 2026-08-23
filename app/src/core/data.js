@@ -1,7 +1,11 @@
 // core/data.js — ФРОНТИР v2.0 + модуль «Фракции». Весь контент data-driven.
 // Таблицы переносятся в UE5 DataAssets/JSON без изменения логики.
 
-export const SAVE_VERSION = 3;
+// v4 — в сейв добавлены pendingEvent/eventCooldown, штрафы событий
+// (farmPenaltyDays/dcPenaltyDays), мирные пакты (_peacePacts) и однодневные
+// кэши отчётов связей (sys.dynLinks и подобные). migrate() в simulation.js
+// даёт старым сейвам v1–v3 честные дефолты.
+export const SAVE_VERSION = 4;
 
 export const TILE = { DEEP: 0, WATER: 1, SAND: 2, GRASS: 3, FOREST: 4, HILL: 5, MOUNTAIN: 6 };
 export const WALKABLE = new Set([TILE.SAND, TILE.GRASS, TILE.FOREST, TILE.HILL]);
