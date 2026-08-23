@@ -222,7 +222,12 @@ export function deserializePolitics(data, rng) {
   if (data.ruler && Array.isArray(data.ruler.traits)) {
     s.ruler = {
       name: String(data.ruler.name || 'Безымянный'),
-      age: clamp(num(data.ruler.age, 30), 14, 120),
+      // БЫЛО: нижняя граница 14. Юный правитель рода вступает в права в 12 лет
+      // (ADULT_DAYS = 1200 дней = 12 лет в link_dynasty.js), и кламп
+      // переписывал его годы при загрузке — круг сейва не был бит-в-бит,
+      // а политика лгала о возрасте. ОТМЕНЕНО: граница выровнена с
+      // совершеннолетием рода, честные 12 лет переживают сохранение.
+      age: clamp(num(data.ruler.age, 30), 12, 120),
       since: num(data.ruler.since, 0),
       traits: data.ruler.traits.filter(t => TRAIT_BY_ID[t]),
     };

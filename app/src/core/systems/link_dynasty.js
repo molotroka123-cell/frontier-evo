@@ -96,6 +96,14 @@ export const INTERREGNUM_STAB = -12;
 export const INTERREG_AUTO_DAYS = 60;      // через столько дней знать решит сама
 export const INTERREG_AUTO_LEGIT = 35;     // новый дом встаёт на эту законность
 export const INTERREG_CHRONIC_STAB = -0.6; // каждый день пустого трона
+// Кулдаун смуты: пресечение рода объявляется междуцарствием не чаще раза в
+// M дней. Без порога яд и быстрые смерти гнали цепочки «дом пал — 60 дней —
+// новый дом — дом пал», давая по 34 междуцарствия за 12000 дней (сид 4242);
+// теперь слишком свежая усобица держится регентским советом до срока M.
+export const INTERREG_COOLDOWN = 600;
+// Регентство тише междуцарствия: династия жива, трон пуст лишь формально,
+// поэтому хронический пресс на порядок вдвое слабее пресса пустого трона.
+export const REGENCY_STAB = -0.3;
 export const LOW_LEGIT_STAB_AT = 25;       // ниже — держава нервничает
 export const LOW_LEGIT_STAB = -0.5;
 
@@ -211,6 +219,14 @@ export function createDynastyState() {
     marriages: [],
     interregnum: false,
     interregnumDays: 0,
+    // Регентство бывает двух видов: при малолетнем правителе (regentId —
+    // взрослый родич) и за пресёкшийся дом внутри кулдауна смуты
+    // (regentId = null — безликий регентский совет).
+    regency: false,
+    regentId: null,
+    // День последнего ОБЪЯВЛЕННОГО междуцарствия: память державы о смуте,
+    // а не дома — переживает смену фамилии на троне.
+    lastInterregnumDay: -1,
     nextId: 1,
     plotSeq: 1,
     lastDelta: 0,
@@ -298,6 +314,19 @@ export function heirOf(st, gov) {
   return any.length ? any[0] : null;
 }
 
+// Регент малолетнего правителя: старший совершеннолетний родич, не сам
+// правитель. При равенстве возрастов старше тот, кто раньше записан в род.
+// Нет взрослого — вернётся null: трон держит безликий регентский совет.
+function pickRegent(N, ruler) {
+  let best = null;
+  for (const m of N.members) {
+    if (m.alive === false || m.id === ruler.id) continue;
+    if (numOf(m.age, 0) < ADULT_DAYS) continue;
+    if (!best || numOf(m.age, 0) > numOf(best.age, 0)) best = m;
+  }
+  return best;
+}
+
 // Кривая смерти. До зрелых лет человек не умирает вовсе, потом понемногу,
 // после глубокой старости — быстро. Предельный возраст никто не переступает:
 // это гарантия, что междуцарствие от старости наступит всегда, а не «почти
@@ -331,6 +360,11 @@ function foundNewHouse(N, rng, legitValue) {
   N.heir = null;
   N.interregnum = false;
   N.interregnumDays = 0;
+  // Новый дом встаёт на чистый трон: никакого регентства от прежнего рода.
+  // lastInterregnumDay СОЗНАТЕЛЬНО не трогаем — кулдаун смуты держит держава,
+  // иначе цепочка «дом пал — совет — новый дом — дом пал» замкнулась бы вновь.
+  N.regency = false;
+  N.regentId = null;
   const fAge = rng.int(2600, 4400);
   const f = makeMember(N, { name: rng.pick(MALE_NAMES), age: fAge, sex: 'м', status: 'ruler', traits: [] });
   const w = makeMember(N, {
@@ -479,7 +513,14 @@ export function dynastyNewDay(sim) {
 
   // --- 3. Престол: наследник по закону или междуцарствие ---------------------
   let ruler = N.members.find((m) => m.alive !== false && m.status === 'ruler');
-  if (!ruler && !N.interregnum) {
+  let throneEvent = false;   // реальная смена на троне этим днём (для летописи)
+  // Регентский совет досиживает свой срок ДО КОНЦА: на последний день его
+  // разбирает шаг 9.5 (возвышение нового дома). Без этой оговорки шаг 3 успел
+  // бы объявить второе междуцарствие прямо в день исхода кулдауна.
+  const councilTermOver = N.regency === true && N.regentId == null
+    && numOf(N.lastInterregnumDay, -1) >= 0
+    && day - numOf(N.lastInterregnumDay, -1) >= INTERREG_COOLDOWN;
+  if (!ruler && !N.interregnum && !councilTermOver) {
     // Наследник пересчитывается КАЖДЫЙ день заново: строй могли поменять,
     // назначение могло устареть — вчерашний список сегодня не закон.
     const heirM = heirOf(N, gov);
@@ -487,23 +528,83 @@ export function dynastyNewDay(sim) {
       heirM.status = 'ruler';
       N.house.generations = numOf(N.house.generations, 1) + 1;
       N.designated = null;   // воля умершего исполнена
+      // Если пустой трон формально держал регентский совет пресёкшегося
+      // дома — воцарение снимает регентство тем же днём.
+      N.regency = false;
+      N.regentId = null;
+      throneEvent = true;
       events.push({
         text: `⚔ Трон занял ${heirM.name} — дом ${N.house.name} продолжается.`,
         type: 'warn', chronicle: true,
       });
     } else {
-      N.interregnum = true;
-      N.interregnumDays = 1;
-      N.designated = null;
-      N.heir = null;
-      interregStartedHere = true;
-      stabToday = INTERREGNUM_STAB;
-      fillPretenders(N, rng, 3, sim);
-      events.push({
-        text: `⚔ Род ${N.house.name} пресёкся: правителя не стало, наследника нет. Междуцарствие!`,
-        type: 'bad', chronicle: true,
-      });
+      // Кулдаун смуты (INTERREG_COOLDOWN): междуцарствие объявляется не чаще
+      // раза в срок. Свежая усобица держится регентским советом — трон пуст
+      // лишь формально, а по исходе срока знать возводит новый дом без
+      // повторного удара по порядку.
+      const sinceLast = numOf(N.lastInterregnumDay, -1) >= 0 ? day - numOf(N.lastInterregnumDay, -1) : -1;
+      if (sinceLast >= 0 && sinceLast < INTERREG_COOLDOWN) {
+        const declared = N.regency === true;
+        N.regency = true;
+        N.regentId = null;   // правит совет, а не человек
+        N.designated = null;
+        N.heir = null;
+        if (!declared) {
+          events.push({
+            text: `⚜ Род ${N.house.name} пресёкся, но прошлая смута ещё свежа: власть берёт регентский совет.`,
+            type: 'warn', chronicle: true,
+          });
+        }
+      } else {
+        N.interregnum = true;
+        N.interregnumDays = 1;
+        N.lastInterregnumDay = day;
+        N.designated = null;
+        N.heir = null;
+        N.regency = false;
+        N.regentId = null;
+        interregStartedHere = true;
+        stabToday = INTERREGNUM_STAB;
+        fillPretenders(N, rng, 3, sim);
+        events.push({
+          text: `⚔ Род ${N.house.name} пресёкся: правителя не стало, наследника нет. Междуцарствие!`,
+          type: 'bad', chronicle: true,
+        });
+      }
     }
+  }
+
+  // --- 3.5 Малолетний на троне: дом держит регента до совершеннолетия --------
+  // Ребёнок остаётся ПРАВИТЕЛЕМ рода и растёт честно — никто не переписывает
+  // его годы. Но государством до ADULT_DAYS правит взрослый родич-регент:
+  // политике предъявляется он, а не возраст ребёнка, иначе кламп в
+  // deserializePolitics переписывал бы юные годы при каждом загрузке сейва.
+  ruler = N.members.find((m) => m.alive !== false && m.status === 'ruler');
+  if (ruler && numOf(ruler.age, 0) < ADULT_DAYS) {
+    let rg = N.members.find((m) => m.alive !== false && m.id === N.regentId);
+    if (!N.regency || !rg || rg.id === ruler.id) {
+      const wasDeclared = N.regency === true;
+      N.regency = true;
+      N.regentId = idOrNull((pickRegent(N, ruler) || {}).id);
+      rg = N.members.find((m) => m.alive !== false && m.id === N.regentId) || null;
+      if (!wasDeclared) {
+        events.push({
+          text: rg
+            ? `⚜ ${ruler.name} ещё дитя (${yearsOf(ruler.age)} лет): до совершеннолетия правит регент ${rg.name}.`
+            : `⚜ ${ruler.name} ещё дитя (${yearsOf(ruler.age)} лет): при нём правит регентский совет дома.`,
+          type: 'warn', chronicle: true,
+        });
+      }
+    }
+  } else if (N.regency && ruler) {
+    // Совершеннолетие: правитель вступил в права сам — реальное событие трона.
+    N.regency = false;
+    N.regentId = null;
+    throneEvent = true;
+    events.push({
+      text: `⚜ ${ruler.name} вступил в права: регентство кончилось.`,
+      type: 'good', chronicle: true,
+    });
   }
 
   // --- 4. Междуцарствие тянется ----------------------------------------------
@@ -517,6 +618,11 @@ export function dynastyNewDay(sim) {
       p.support = clamp(numOf(p.support, 0) + rng.int(-1, 2), 0, SUPPORT_MAX);
     }
     reasons.push(`Междуцарствие: ${N.interregnumDays}-й день без законной власти`);
+  }
+  // Регентский совет при пресёкшемся доме: игрок видит срок, а не молчание.
+  if (N.regency && !ruler && numOf(N.lastInterregnumDay, -1) >= 0) {
+    const left = Math.max(0, INTERREG_COOLDOWN - (day - numOf(N.lastInterregnumDay, -1)));
+    reasons.push(`Регентский совет правит за пресёкшийся дом: знать соберётся через ~${left} дн.`);
   }
 
   // --- 5. Слабый род приманивает самозванцев ----------------------------------
@@ -613,8 +719,22 @@ export function dynastyNewDay(sim) {
   // После слагаемого законности — новый дом встаёт на РОВНО свою цифру.
   if (N.interregnum && N.interregnumDays > INTERREG_AUTO_DAYS) {
     const f = foundNewHouse(N, rng, INTERREG_AUTO_LEGIT);
+    throneEvent = true;
     events.push({
       text: `👑 Смуте конец: знать возвела на трон дом ${N.house.name} — правитель ${f.name}.`,
+      type: 'good', chronicle: true,
+    });
+  }
+  // Регентский совет досидел до срока кулдауна смуты — знать возводит новый
+  // дом БЕЗ повторного объявленного междуцарствия и его удара по порядку:
+  // смута уже была объявлена один раз, летопись не лжёт о второй.
+  if (!N.interregnum && N.regency && !ruler
+    && numOf(N.lastInterregnumDay, -1) >= 0
+    && day - numOf(N.lastInterregnumDay, -1) >= INTERREG_COOLDOWN) {
+    const f = foundNewHouse(N, rng, INTERREG_AUTO_LEGIT);
+    throneEvent = true;
+    events.push({
+      text: `⚜ Срок смуты вышел: регентский совет возвёл на трон дом ${N.house.name} — правитель ${f.name}.`,
       type: 'good', chronicle: true,
     });
   }
@@ -627,11 +747,29 @@ export function dynastyNewDay(sim) {
   const flags = { state: N, courtGold: paid ? upkeep : 0 };
   const lr = N.members.find((m) => m.alive !== false && m.status === 'ruler');
   const polName = pol && pol.ruler ? pol.ruler.name : null;
-  if (lr && lr.name !== polName) {
+  if (lr && N.regency) {
+    // Малолетний правитель: политике показывается РЕГЕНТ — взрослый человек.
+    // Возраст ребёнка в политику не идёт: там его годы переписал бы кламп,
+    // и круг сейва перестал бы быть бит-в-бит.
+    const rg = N.members.find((m) => m.alive !== false && m.id === N.regentId);
+    if (rg && rg.name !== polName) {
+      flags.regent = {
+        name: rg.name,
+        ageYears: yearsOf(rg.age),
+        traits: Array.isArray(rg.traits) ? rg.traits.slice() : [],
+      };
+    }
+  } else if (lr && lr.name !== polName) {
     flags.newRuler = {
       name: lr.name,
       ageYears: yearsOf(lr.age),
       traits: Array.isArray(lr.traits) ? lr.traits.slice() : [],
+      // chronicle=true только на реальное событие трона этого дня
+      // (коронация наследника, новый дом, вступление в права). Раньше строка
+      // «Власть у рода…» писалась при каждом расхождении имён — в том числе
+      // после случайного преемника в самой политике: сид 11 за 12000 дней
+      // давал 24 записи при 4 реальных сменах.
+      chronicle: throneEvent === true,
     };
   }
 
@@ -642,6 +780,9 @@ export function dynastyNewDay(sim) {
   } else {
     stab = 0;
     if (N.interregnum) stab += INTERREG_CHRONIC_STAB;
+    // Регентский совет за пресёкшийся дом: трон пуст лишь формально, пресс
+    // вдвое слабее междуцарствия (REGENCY_STAB против INTERREG_CHRONIC_STAB).
+    else if (N.regency && !lr) stab += REGENCY_STAB;
     if (N.legitimacy < LOW_LEGIT_STAB_AT) stab += LOW_LEGIT_STAB;
   }
   if (!N.interregnum && N.pretenders.length) happyMod -= 2;
@@ -916,6 +1057,12 @@ export function serializeDynasty(sim) {
     marriages: (Array.isArray(st.marriages) ? st.marriages : []).map(marriageOut),
     interregnum: st.interregnum === true,
     interregnumDays: Math.max(0, intOf(st.interregnumDays, 0)),
+    // Регентство и память о смуте обязаны переживать сейв: иначе после
+    // загрузки малолетний объявлял бы регентство заново, а кулдаун смуты
+    // забывался. Пишутся и читаются одними правилами — круг бит-в-бит.
+    regency: st.regency === true,
+    regentId: idOrNull(st.regentId),
+    lastInterregnumDay: Math.max(-1, intOf(st.lastInterregnumDay, -1)),
     nextId: Math.max(1, intOf(st.nextId, 1)),
     plotSeq: Math.max(1, intOf(st.plotSeq, 1)),
     lastDelta: numOf(st.lastDelta, 0),
@@ -964,6 +1111,9 @@ export function restoreDynasty(holder, data) {
     .map(marriageOut);
   st.interregnum = d.interregnum === true;   // строки вроде «да» — ложь
   st.interregnumDays = Math.max(0, intOf(d.interregnumDays, 0));
+  st.regency = d.regency === true;
+  st.regentId = idOrNull(d.regentId);
+  st.lastInterregnumDay = Math.max(-1, intOf(d.lastInterregnumDay, -1));
   const maxMemberId = st.members.reduce((a, m) => Math.max(a, m.id), 0);
   st.nextId = Math.max(1, intOf(d.nextId, 1), maxMemberId + 1);
   st.plotSeq = Math.max(1, intOf(d.plotSeq, 1));
@@ -1025,6 +1175,15 @@ export function renderDynastyPanel(sim) {
     html += `<div class="reason">⚔ МЕЖДУЦАРСТВИЕ: ${st.interregnumDays}-й день пустого трона. `
       + `Без решения знать воцарит новый дом через ~${left} дн.`
       + ` <button class="btn" data-dyn="adopt">Воцарить новый дом (${ADOPT_GOLD}🪙)</button></div>`;
+  }
+  // Регентство видно игроку: кто и за кого держит трон.
+  if (st.regency) {
+    const rg = st.members.find((m) => m.alive !== false && m.id === st.regentId);
+    html += `<div class="reason">⚜ РЕГЕНТСТВО: `
+      + (rg
+        ? `${ruler && numOf(ruler.age, 0) < ADULT_DAYS ? `при юном правителе ${esc(ruler.name)} правит регент ${esc(rg.name)}` : `трон держит регент ${esc(rg.name)}`}`
+        : 'трон держит регентский совет дома')
+      + '.</div>';
   }
   html += '</div>';
 
