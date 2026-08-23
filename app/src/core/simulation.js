@@ -7,6 +7,8 @@ import { TILE, WALKABLE, ERAS, TECHS, TECH_ERA_IDX, BUILDINGS, BUILDING_ERA_IDX,
 import { installSystems, systemsNewDay, systemsFactions, systemsHappyMod, systemsWorkMult, systemsPopCapMod, systemsSerialize, systemsRestore, herdsNearest, herdsHunt } from './systems/integrate.js';
 import { memoryEatMult } from './systems/link_memory.js';
 import { wearWorkMult } from './systems/build2.js';
+// Чуда мира: сериализация состояния и чтение эффекта ядром.
+import * as WONDER from './systems/wonders.js';
 
 export const DAY_SECONDS = 6;
 const EAT_PER_DAY = 0.7;
@@ -402,6 +404,8 @@ export class Simulation {
       if (this.techs.has('steel_tech')) mult *= 1.25;
       if (this.techs.has('chemistry')) mult *= 1.25;
     }
+    // Чудо-множители (Тракт, Академия) встают в тот же стек, что здания и технологии.
+    mult *= WONDER.wonderGlobalMult(this, kind);
     return mult;
   }
 
@@ -521,6 +525,8 @@ export class Simulation {
   defensePower() {
     let def = 0;
     for (const b of this.doneBuildings()) def += BUILDINGS[b.id].defense || 0;
+    // Стена Столетий: постоянная прибавка, пока чудо не разрушено.
+    def += WONDER.wonderDefense(this);
     return def;
   }
   armyPower() {
@@ -1842,6 +1848,7 @@ export class Simulation {
         _repelledSeen: this.sys._repelledSeen ?? null,
       } : null,
       sys: systemsSerialize(this),
+      wonders: WONDER.serializeWonders(this.wonders),
       rngState: this.rng.getState(),
       log: this.log.slice(-80),
     };
@@ -1889,6 +1896,8 @@ export class Simulation {
     sim._peacePacts = data.peacePacts || {};
     if (data.dayReports && typeof data.dayReports === 'object' && sim.sys) Object.assign(sim.sys, data.dayReports);
     systemsRestore(sim, data.sys);
+    // Чудо переживает сейв целиком: стройка, руины и потолок разрушений.
+    sim.wonders = WONDER.restoreWonders(data.wonders);
     sim.log = data.log || [];
     for (const f of sim.factions) {
       if (!(f.id in sim.relations)) sim.relations[f.id] = 0;

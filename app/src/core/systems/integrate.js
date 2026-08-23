@@ -31,7 +31,12 @@ import * as GH from './link_ghost.js';
 // Род при троне: династия и её дела. Отчёт применяется в applyDynastyLinks ниже.
 import * as DYN from './link_dynasty.js';
 import * as B2 from './build2.js';
+// Подвоз материалов на недострои: модуль только считает очередь доставок,
+// применяет её applySupply ниже.
+import * as BSUP from './build_supply.js';
 import * as HERD from './herds.js';
+// Чуда мира: одно на партию. Отчёт применяется в applyWonders ниже.
+import * as WON from './wonders.js';
 import { tileAt } from '../world.js';
 import { createRng } from '../rng.js';
 
@@ -93,6 +98,8 @@ export function installSystems(sim) {
   // Стада: дичь возобновляема, но исчерпаема. Ставится ПОСЛЕ мира и ДО первого
   // дня — иначе первый же охотник не найдёт ни одного стада.
   sim.herds = HERD.createHerds();
+  // Чуда: одно на партию. Состояние пустое до первого выбора игрока.
+  sim.wonders = WON.createWonders();
   {
     const ctx = HERD.herdsContext(sim, (world, x, y) => tileAt(world, x, y));
     // СВОЙ ПОТОК СЛУЧАЙНОСТИ, а не sim.rng. Расстановка стад — это генерация
@@ -139,6 +146,9 @@ export function systemsNewDay(sim) {
   // уже посчитало, а не считают его заново.
   applyMasterLinks(sim);
   applyBuild(sim);
+  // Подвоз считается сразу после стройки: он видит площадки, начатые за эти
+  // сутки, и вчерашний прогресс недостроев.
+  applySupply(sim);
   applyGhost(sim);
   // Соседи читают уже сложившийся день: казну после налогов и стабильность
   // после голода. Иначе охрана границ оплачивалась бы из вчерашних денег.
@@ -159,6 +169,9 @@ export function systemsNewDay(sim) {
   // Стада считаются ДО памяти: вымирание вида — событие, которое память
   // должна записать в те же сутки.
   applyHerds(sim);
+  // Чудеса идут перед памятью: завершение или гибель чуда — событие тех же
+  // суток, которое летопись обязана застать.
+  applyWonders(sim);
   applyMemoryLinks(sim, harvestScars(sim, { war: warOut, surv: survOut }));
 }
 
@@ -331,6 +344,9 @@ export function systemsSerialize(sim) {
     ghost: sim.linkGhost || null,
     herds: HERD.serializeHerds(sim.herds),
     build: B2.serializeBuild(sim.build),
+    // Очередь подвоза короткоживуща, но панель после загрузки сейва должна
+    // читать готовое, а не ждать следующего дня.
+    supply: sim.sys.supplyLinks ? { report: sim.sys.supplyLinks } : null,
     dyn: DYN.serializeDynasty(sim),
   };
 }
@@ -355,6 +371,9 @@ export function systemsRestore(sim, data) {
   sim.linkGhost = GH.restoreGhost(data.ghost);
   sim.herds = HERD.restoreHerds(data.herds);
   sim.build = B2.restoreBuild(data.build);
+  // Отчёт подвоза восстанавливается как есть: пересчитывать его до следующего
+  // дня незачем, а панель читает готовое сразу.
+  sim.sys.supplyLinks = (data.supply && data.supply.report) || null;
   if (data.dyn) DYN.restoreDynasty(sim, data.dyn);
 }
 
@@ -515,6 +534,8 @@ function applyBuild(sim) {
 
 // Для панели «Стройка»: очередь, подсказки, ремонт.
 export function buildQueue(sim) { return B2.queueReport(sim.build, sim); }
+// Карточка чудес для той же панели: каталог и судьба выбранного.
+export function wonderPanel(sim) { return WON.wonderReport(sim); }
 export function buildPlan(sim, id, x, y) { return B2.plan(sim.build, sim, id, x, y); }
 export function buildPlanArea(sim, id, x0, y0, x1, y1) { return B2.planArea(sim.build, sim, id, x0, y0, x1, y1); }
 export function buildCancel(sim, key) { return B2.cancelPlan(sim.build, key); }
@@ -528,6 +549,14 @@ export function buildRepair(sim, b) { return B2.repair(sim, b); }
 export function buildRepairAll(sim) { return B2.repairAll(sim); }
 
 // Тень прошлой партии: слепок раз в сезон и рассказ о расхождении.
+// Подвоз: отчёт модуля кладётся в sys для панели, редкие события — в журнал.
+function applySupply(sim) {
+  const L = BSUP.supplyNewDay(sim);
+  sim.sys.supplyLinks = L;           // для HUD: панель читает готовое
+  for (const e of L.events) sim.addLog(e.text, e.type);
+  return L;
+}
+
 function applyGhost(sim) {
   if (!sim.linkGhost) { sim.linkGhost = GH.createGhost(); sim.linkGhost.seed = sim.seed | 0; }
   const L = GH.ghostTick(sim);
@@ -579,6 +608,31 @@ function applyHerds(sim) {
     if (e.cause === 'extinct') sim.addChronicle(e.text);
   }
   sim.sys.herdsReport = rep;
+}
+
+// Применитель отчёта чудес. Модуль считает — здесь начисляем.
+function applyWonders(sim) {
+  if (!sim.wonders) sim.wonders = WON.createWonders();
+  const rep = WON.wondersNewDay(sim, sim.rng);
+  sim.sys.wonderRep = rep;                       // для HUD: готовые числа
+  for (const [r, add] of Object.entries(rep.mods.res)) {
+    if (!(r in sim.res) || !add) continue;
+    sim.res[r] = Math.min(sim.resCap[r] ?? 99999, sim.res[r] + add);
+  }
+  if (rep.mods.legit > 0 && sim.linkDynasty) {
+    // Курган крепит род: читаем законность той же формой, что и модуль, чтобы
+    // панель и эффект никогда не расходились в толковании поля.
+    sim.linkDynasty.legitimacy = Math.min(100, (Number.isFinite(Number(sim.linkDynasty.legitimacy))
+      ? Number(sim.linkDynasty.legitimacy) : 55) + rep.mods.legit);
+  }
+  // Плоская оборона и множители читаются ядром через WONDER.wonderDefense /
+  // wonderGlobalMult (см. simulation.js) — здесь они не начисляются.
+  for (const r of rep.reasons) if (/руин|предел|полон|утвердился/.test(r)) sim.addLog(r, 'info');
+  for (const e of rep.events) {
+    sim.addLog(e.text, e.type === 'good' ? 'good' : e.type);
+    if (e.chronicle) sim.addChronicle(e.text);
+  }
+  return rep;
 }
 
 export function herdsPanel(sim) {
@@ -853,7 +907,27 @@ function applyDynastyLinks(sim) {
       traits: rep.flags.newRuler.traits,
     };
     pst.rulersCount = Math.max(1, (pst.rulersCount || 1) + 1);
-    sim.addChronicle(`Власть у рода ${sim.linkDynasty.house ? sim.linkDynasty.house.name : ''}: правитель ${rep.flags.newRuler.name}.`);
+    // БЫЛО: строка писалась при КАЖДОМ применении отчёта с новым правителем —
+    // то есть и когда имя разошлось из-за случайного преемника в самой
+    // политике (successionCrisis), а не из-за события рода: сид 11, эпоха 3,
+    // 12000 дней давали 24 записи «Власть у рода…» при 4 реальных сменах.
+    // ОТМЕНЕНО: летопись — события, а не состояния; строку пишет только
+    // реальная смена трона, которую модуль помечает флагом chronicle.
+    if (rep.flags.newRuler.chronicle === true) {
+      sim.addChronicle(`Власть у рода ${sim.linkDynasty.house ? sim.linkDynasty.house.name : ''}: правитель ${rep.flags.newRuler.name}.`);
+    }
+  }
+
+  // Регент при малолетнем правителе: политика показывает регента — взрослого.
+  // Без счётчика правителей и без летописи: регент не царствовал, он держал
+  // трон за ребёнка, чьи годы растут честно во вкладке «Род».
+  if (rep.flags.regent && sim.politics && sim.politics.state) {
+    sim.politics.state.ruler = {
+      name: rep.flags.regent.name,
+      age: rep.flags.regent.ageYears,
+      since: sim.day,
+      traits: rep.flags.regent.traits,
+    };
   }
 
   // Причины названы словами: каждая строка — в журнал.

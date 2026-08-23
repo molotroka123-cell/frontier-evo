@@ -4,7 +4,9 @@ import { DAY_SECONDS } from '../core/simulation.js';
 import { QUALITY, QUALITY_ORDER } from '../render/quality.js';
 import { FileSave } from '../save/saveSystem.js';
 import { renderMarketPanel, bindMarketPanel, createMarketPanelState } from './panel_market.js';
-import { PANELS, memoryPanel, mastersPanel, ghostPanel, intelOf, intelTrustWord } from '../core/systems/integrate.js';
+import { PANELS, memoryPanel, mastersPanel, ghostPanel, intelOf, intelTrustWord, wonderPanel } from '../core/systems/integrate.js';
+// Команда закладки чуда живёт в модуле чудес: HUD только передаёт клик.
+import * as WON from '../core/systems/wonders.js';
 import { renderDynastyPanel } from '../core/systems/link_dynasty.js';
 // Скин правой меню-панели подключается здесь, а не в main.js: вкладки собирает
 // именно hud.bind(), а скин только украшает уже готовые кнопки и сам ждёт их
@@ -506,6 +508,17 @@ export class Hud {
     root.querySelectorAll('[data-build]').forEach(c => {
       c.onclick = () => { this.cb.startPlacing(c.dataset.build); };
     });
+    // Чудеса: одна карточка судьбы. Клик закладывает чудо или объясняет отказ —
+    // второго шанса в партии нет, поэтому и обработчик один на весь каталог.
+    root.querySelectorAll('[data-wonder]').forEach(c => {
+      c.onclick = () => {
+        const wk = c.dataset.wonder;
+        const r = WON.startWonder(this.sim, wk);
+        if (!r.ok) { this.toast(r.reason, 'warn'); this.audio.play('deny'); }
+        else { this.toast(`Заложено чудо «${WON.WONDERS[wk].ru}»!`, 'good'); this.audio.play('coin'); }
+        this.renderPanel();
+      };
+    });
     root.querySelectorAll('[data-tech]').forEach(c => {
       c.onclick = () => {
         const r = this.sim.research(c.dataset.tech);
@@ -779,6 +792,25 @@ export class Hud {
         <div class="desc">${def.desc}</div>
         ${reason ? `<div class="reason">${reason}</div>` : ''}
       </div>`;
+    }
+    // Культ и Чудеса: одна карточка судьбы вместо сетки построек.
+    const wpnl = wonderPanel(s);
+    html += `<h4 class="group">Культ и Чудеса</h4>`;
+    for (const w of wpnl.catalog) {
+      const dis = !w.available || wpnl.has;
+      const why = wpnl.has ? 'Чудо в этой партии уже выбрано'
+        : !w.available ? `Эпоха: ${w.eraName}` : '';
+      html += `<div class="card ${dis ? 'disabled' : ''} ${wpnl.has && w.chosen ? 'done-card' : ''}" data-wonder="${w.id}">
+        <div class="ttl"><span>${w.icon} ${w.ru}</span><span class="cost">${this.costStr(w.cost)}</span></div>
+        <div class="desc">${w.effectRu}</div>
+        <div class="desc">${w.text}</div>
+        ${why ? `<div class="reason">${why}</div>` : ''}
+      </div>`;
+    }
+    if (wpnl.has) {
+      html += `<div class="card ${wpnl.statusWord === 'Разрушено' ? 'disabled' : 'done-card'}">
+        <div class="ttl"><span>${wpnl.icon} ${wpnl.name}</span><span>${wpnl.statusWord}</span></div>
+        <div class="desc">${wpnl.hint || ''}</div></div>`;
     }
     return html;
   }
