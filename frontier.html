@@ -2353,6 +2353,12 @@ h4.group {
   var FOUND_MIN_DIST = 8;
   var FOUND_MAX_DIST = 20;
   var COLONISTS = 6;
+  var PLAYER_SETTLE_GAP = 6;
+  var EXPANSION_PLAYER_FEAR = 14;
+  var SPOT_RES_R = 3;
+  var THREAT_DIST = 18;
+  var ABANDON_POP = 3;
+  var ABANDON_STARVE_DAYS = 10;
   var DECISION_PERIOD = 10;
   var CIV_WAR_PHASE = 3;
   var CIV_ALLY_PHASE = 7;
@@ -2375,6 +2381,23 @@ h4.group {
     }
     for (const u of UNITS) if (map[u.req]) map[u.req].units++;
     return map;
+  })();
+  var MASONRY_PATH = (() => {
+    const path = /* @__PURE__ */ new Set(["masonry"]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const t of TECHS) {
+        if (!path.has(t.id) || t.id === "warfare") continue;
+        for (const p of t.prereq) {
+          if (p !== "warfare" && !path.has(p)) {
+            path.add(p);
+            grew = true;
+          }
+        }
+      }
+    }
+    return path;
   })();
   var FORBIDDEN = /* @__PURE__ */ new Set(["spire", "spaceport", "campfire"]);
   function emptyRes() {
@@ -2420,6 +2443,12 @@ h4.group {
       alliesMade: 0,
       built: 0,
       starveDays: 0,
+      holdDays: 0,
+      // сколько дней армия удерживается дома (война/сильный игрок у границ)
+      migrations: 0,
+      // покинутых безнадёжных деревень
+      despaired: false,
+      // фракция доживает: новые стройки и колонии заморожены
       terrain: null,
       // кэш «какие тайлы доступны» — пересчёт при новом городе
       terrainAt: -1,
@@ -2438,6 +2467,11 @@ h4.group {
     for (const f of live) {
       const c = state.civ[f.id] || addCiv(state, f);
       economy(c, f, ctx, out);
+      assessThreat(c, f, ctx, rng);
+      if (c.despaired) {
+        sync(c, f);
+        continue;
+      }
       research(c, f, ctx, out);
       construction(c, f, ctx, rng, out);
       military(c, f, ctx);
@@ -2450,9 +2484,12 @@ h4.group {
     }
     return out;
   }
+  function aliveTowns(f) {
+    return (f.settlements || []).filter((s) => !s.dead);
+  }
   function economy(c, f, ctx, out) {
     const tr = c.tr, bn = bonus(f), pn = penalty(f);
-    const towns = Math.max(1, (f.settlements || []).length);
+    const towns = Math.max(1, aliveTowns(f).length);
     let workers = Math.floor(Math.max(0, f.P) * WORK_SHARE);
     const gain = emptyRes();
     let housing = BASE_HOUSING * towns;
@@ -2472,9 +2509,9 @@ h4.group {
         if (need > workers) break;
         workers -= need;
         if (def.consume) {
-          let ok = true;
-          for (const k of Object.keys(def.consume)) if (c.res[k] < def.consume[k]) ok = false;
-          if (!ok) {
+          let ok2 = true;
+          for (const k of Object.keys(def.consume)) if (c.res[k] < def.consume[k]) ok2 = false;
+          if (!ok2) {
             workers += need;
             break;
           }
@@ -2515,6 +2552,31 @@ h4.group {
     c._housing = housing;
     c._defense = defense;
     c._armyMult = armyMult;
+    if (!c.despaired && c.starveDays > 0 && gain.food < eat && f.P / towns < ABANDON_POP) {
+      c.despaired = true;
+      out.logs.push(`${f.def.name} больше не может прокормить себя: стройки заморожены.`);
+    }
+    if (c.starveDays >= ABANDON_STARVE_DAYS) {
+      const alive2 = aliveTowns(f);
+      if (alive2.length > 1 && f.P / alive2.length < ABANDON_POP) {
+        const cap2 = alive2.find((s) => s.capital) || alive2[0];
+        let far = null, fd = -1;
+        for (const s of alive2) {
+          if (s.capital) continue;
+          const d = Math.hypot(s.x - cap2.x, s.y - cap2.y);
+          if (d > fd) {
+            fd = d;
+            far = s;
+          }
+        }
+        if (far) {
+          far.dead = true;
+          c.migrations++;
+          c.terrainAt = -1;
+          out.logs.push(`${f.def.name} снимает дальний посёлок (${far.x}, ${far.y}): люди уходят к столице.`);
+        }
+      }
+    }
     if (c.starveDays > 40 && f.P <= 3) {
       f.alive = false;
       out.logs.push(`${f.def.name} угас от голода.`);
@@ -2524,7 +2586,9 @@ h4.group {
     if (!c.research) c.research = chooseTech(c, f);
     if (!c.research) return;
     const t = TECH_BY_ID2[c.research];
-    const need = Math.max(10, t.cost * TECH_COST_MULT);
+    let need = Math.max(10, t.cost * TECH_COST_MULT);
+    const walled = c.buildings.palisade || c.buildings.stone_walls || c.buildings.castle;
+    if (!walled && c.tr.defense > 4 && MASONRY_PATH.has(c.research)) need *= 0.3;
     if (c.res.knowledge < need) return;
     c.res.knowledge -= need;
     c.techs.push(t.id);
@@ -2538,6 +2602,7 @@ h4.group {
   function chooseTech(c, f) {
     const tr = c.tr;
     const known = new Set(c.techs);
+    const walled = c.buildings.palisade || c.buildings.stone_walls || c.buildings.castle;
     let best = null, bestScore = -Infinity;
     for (const t of TECHS) {
       if (known.has(t.id)) continue;
@@ -2549,6 +2614,7 @@ h4.group {
       score += u.know * 0.06 * (tr.science / 5);
       score += u.food * 0.05 * (tr.expansion / 5);
       if (t.era) score += 0.12 * (tr.science / 5);
+      if (!walled && tr.defense > 4 && MASONRY_PATH.has(t.id)) score += 3;
       if (score > bestScore) {
         bestScore = score;
         best = t.id;
@@ -2606,7 +2672,14 @@ h4.group {
       if (def.housing) s += (houseTight ? 0.09 : 0.015) * def.housing;
       if (def.armyMult) s += (def.armyMult - 1) * 6 * (tr.aggression / 5);
       if (def.special === "train") s += 0.5 * (tr.aggression / 5);
-      if (def.defense) s += def.defense * 0.06 * (tr.defense / 5);
+      let fort = 0;
+      if (def.defense) fort += def.defense * 0.22 * (tr.defense / 5);
+      if (def.special === "train") fort += 0.3 * (tr.defense / 5);
+      if (fort > 0) {
+        if (c._threatened) fort *= 2;
+        if (!(c.buildings.palisade || c.buildings.stone_walls || c.buildings.castle)) fort *= 1.6;
+        s += fort;
+      }
       if (def.happy) s += def.happy * 0.035 * (tr.faith / 5);
       if (def.industry) s += (def.industry - 1) * 3;
       if (def.cap) s += 0.2;
@@ -2641,11 +2714,30 @@ h4.group {
     c.terrainAt = towns;
     return c.terrain;
   }
+  function assessThreat(c, f, ctx, rng) {
+    const P = ctx.player;
+    const mine = Math.max(1, f.armyPts || 1);
+    let dist = Infinity, seen = 0;
+    if (P && (P.settlements || []).length) {
+      dist = nearestDist(f, { settlements: P.settlements });
+      if (rng) {
+        const noise = ctx.difficulty === "easy" ? 0.5 : ctx.difficulty === "hard" ? 0.1 : 0.25;
+        seen = Math.max(1, (P.armyPower || 0) * (1 + rng.range(-noise, noise)));
+      }
+    }
+    const atWar2 = !!(ctx.diplo && warEnemies(ctx.diplo, f.id).length > 0);
+    c._playerDist = dist;
+    c._seenPlayerPower = seen;
+    c._atWar = atWar2;
+    c._threatened = atWar2 || dist <= THREAT_DIST && seen > mine * 0.8;
+  }
   function military(c, f, ctx) {
     const tr = c.tr, bn = bonus(f), pn = penalty(f);
     const atWar2 = ctx.diplo ? warEnemies(ctx.diplo, f.id).length > 0 : 0;
     const barracks = c.buildings.barracks || 0;
     const want = f.P * (0.1 + tr.aggression * 0.03) * (1 + (atWar2 ? 0.6 : 0));
+    if (c._threatened) c.holdDays++;
+    const desertion = DESERT_RATE * (c._threatened ? 0.5 : 1);
     const upkeepG = c.troops * UPKEEP_GOLD, upkeepF = c.troops * UPKEEP_FOOD;
     if (c.res.gold >= upkeepG && c.res.food >= upkeepF) {
       c.res.gold -= upkeepG;
@@ -2653,7 +2745,7 @@ h4.group {
     } else {
       c.res.gold = Math.max(0, c.res.gold - upkeepG);
       c.res.food = Math.max(0, c.res.food - upkeepF);
-      c.troops *= 1 - DESERT_RATE;
+      c.troops *= 1 - desertion;
     }
     const foodFree = c.res.food - f.P * EAT_PER_POP * 8;
     const goldFree = c.res.gold - ARMY_RESERVE;
@@ -2675,12 +2767,14 @@ h4.group {
   }
   function colonize(c, f, ctx, rng, out) {
     if (!ctx.world || !rng) return;
-    const towns = (f.settlements || []).length;
-    const need = FOUND_POP * towns * (12 / (6 + c.tr.expansion));
+    const towns = Math.max(1, aliveTowns(f).length);
+    let need = FOUND_POP * towns * (12 / (6 + c.tr.expansion));
+    if (c.tr.aggression >= 8 && c.tr.expansion >= 8) need *= 0.6;
     if (f.P < need) return;
+    if (c._threatened && c.tr.aggression < 8 && c.tr.expansion < 8) return;
     const k2 = (bonus(f).outpost || 1) * (penalty(f).outpost || 1);
     for (const k of Object.keys(FOUND_COST)) if (c.res[k] < FOUND_COST[k] * k2) return;
-    const spot = findSpot(f, ctx, rng);
+    const spot = findSpot(c, f, ctx, rng);
     if (!spot) return;
     for (const k of Object.keys(FOUND_COST)) c.res[k] -= FOUND_COST[k] * k2;
     f.settlements.push({ x: spot.x, y: spot.y, capital: false });
@@ -2690,28 +2784,48 @@ h4.group {
     out.founded.push({ fid: f.id, x: spot.x, y: spot.y });
     out.logs.push(`${f.def.name} основал поселение (${spot.x}, ${spot.y}).`);
   }
-  function findSpot(f, ctx, rng) {
+  function findSpot(c, f, ctx, rng) {
     const world = ctx.world;
     const all = [];
-    for (const o of ctx.factions || []) for (const s of o.settlements || []) all.push(s);
-    for (const s of ctx.player && ctx.player.settlements || []) all.push(s);
+    for (const o of ctx.factions || []) for (const s of aliveTowns(o)) all.push(s);
+    const pset = ctx.player && ctx.player.settlements || [];
+    for (const s of pset) all.push(s);
+    const scared = c.tr.aggression < 7 && (c._seenPlayerPower || 0) > Math.max(1, f.armyPts || 1);
+    const bold = !scared && c._threatened && c.tr.aggression >= 7;
+    let best = null, bestScore = -Infinity;
     for (let attempt = 0; attempt < 40; attempt++) {
       const from = rng.pick(f.settlements);
       if (!from) return null;
-      const a = rng.range(0, Math.PI * 2);
+      let a = rng.range(0, Math.PI * 2);
+      if (bold && pset.length && attempt % 2 === 1) {
+        a = Math.atan2(pset[0].y - from.y, pset[0].x - from.x) + rng.range(-0.9, 0.9);
+      }
       const r = rng.range(FOUND_MIN_DIST, FOUND_MAX_DIST);
       const x = Math.round(from.x + Math.cos(a) * r), y = Math.round(from.y + Math.sin(a) * r);
       if (x < 3 || y < 3 || x >= world.w - 3 || y >= world.h - 3) continue;
       if (!WALKABLE.has(tileAt(world, x, y))) continue;
       if (all.some((s) => Math.hypot(s.x - x, s.y - y) < FOUND_MIN_DIST)) continue;
-      let land = 0;
+      let pd = Infinity;
+      for (const s of pset) pd = Math.min(pd, Math.hypot(s.x - x, s.y - y));
+      if (scared && pd < Math.max(PLAYER_SETTLE_GAP, EXPANSION_PLAYER_FEAR)) continue;
+      let land = 0, res = 0;
       for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
         if (WALKABLE.has(tileAt(world, x + dx, y + dy))) land++;
       }
       if (land < 14) continue;
-      return { x, y };
+      for (let dy = -SPOT_RES_R; dy <= SPOT_RES_R; dy++) for (let dx = -SPOT_RES_R; dx <= SPOT_RES_R; dx++) {
+        const t = tileAt(world, x + dx, y + dy);
+        if (t === TILE.FOREST || t === TILE.HILL || t === TILE.MOUNTAIN) res++;
+      }
+      let score = land * 0.02 + res * 0.35;
+      if (scared) score += pd * 0.3;
+      score += rng.next() * 0.5;
+      if (score > bestScore) {
+        bestScore = score;
+        best = { x, y };
+      }
     }
-    return null;
+    return best;
   }
   function warDecisions(state, ctx, out, day, live) {
     const rng = ctx.rng, D = ctx.diplo;
@@ -2798,8 +2912,10 @@ h4.group {
     }
   }
   function nearestDist(a, b) {
+    const A = (a.settlements || []).filter((s) => !s.dead);
+    const B2 = (b.settlements || []).filter((s) => !s.dead);
     let best = Infinity;
-    for (const s of a.settlements || []) for (const t of b.settlements || []) {
+    for (const s of A) for (const t of B2) {
       const d = Math.hypot(s.x - t.x, s.y - t.y);
       if (d < best) best = d;
     }
@@ -2832,7 +2948,10 @@ h4.group {
         warsDeclared: c.warsDeclared,
         alliesMade: c.alliesMade,
         built: c.built,
-        starveDays: c.starveDays
+        starveDays: c.starveDays,
+        holdDays: c.holdDays,
+        migrations: c.migrations,
+        despaired: !!c.despaired
       };
     }
     return { v: 1, civ, lastDay: state.lastDay };
@@ -2855,6 +2974,9 @@ h4.group {
       c.alliesMade = d.alliesMade || 0;
       c.built = d.built || 0;
       c.starveDays = d.starveDays || 0;
+      c.holdDays = d.holdDays || 0;
+      c.migrations = d.migrations || 0;
+      c.despaired = !!d.despaired;
       c.terrain = null;
       c.terrainAt = -1;
     }
@@ -6911,21 +7033,21 @@ h4.group {
       return { ok: true, text: `${sq.name}: стоять` };
     }
     if (kind === "home") {
-      const ok = orderMove(st, sq.id, sim2.world.startX, sim2.world.startY, sim2.world);
-      return ok ? { ok: true, text: `${sq.name} идёт домой` } : { ok: false, reason: "Пути домой нет — отряд отрезан рельефом" };
+      const ok2 = orderMove(st, sq.id, sim2.world.startX, sim2.world.startY, sim2.world);
+      return ok2 ? { ok: true, text: `${sq.name} идёт домой` } : { ok: false, reason: "Пути домой нет — отряд отрезан рельефом" };
     }
     if (kind === "point") {
       const p = sim2.war.front.state.points.find((q) => q.id === arg);
       if (!p) return { ok: false, reason: "Такой точки нет" };
-      const ok = orderMove(st, sq.id, p.x, p.y, sim2.world);
-      return ok ? { ok: true, text: `${sq.name} идёт к «${p.name}»` } : { ok: false, reason: "Туда не дойти: путь перекрыт водой или горами" };
+      const ok2 = orderMove(st, sq.id, p.x, p.y, sim2.world);
+      return ok2 ? { ok: true, text: `${sq.name} идёт к «${p.name}»` } : { ok: false, reason: "Туда не дойти: путь перекрыт водой или горами" };
     }
     if (kind === "intercept") {
       const raidId = sim2.war.raid.squadId;
       const foe = raidId ? findSquad(st, raidId) : null;
       if (!foe) return { ok: false, reason: "Отряда набега на карте нет" };
-      const ok = orderAttack(st, sq.id, foe.id, sim2.world);
-      return ok ? { ok: true, text: `${sq.name} перехватывает набег` } : { ok: false, reason: "До врага не добраться" };
+      const ok2 = orderAttack(st, sq.id, foe.id, sim2.world);
+      return ok2 ? { ok: true, text: `${sq.name} перехватывает набег` } : { ok: false, reason: "До врага не добраться" };
     }
     return { ok: false, reason: "Неизвестный приказ" };
   }
@@ -6939,8 +7061,8 @@ h4.group {
     }
     const s = (f.settlements || []).find((q) => q.x === x && q.y === y);
     if (!s) return { ok: false, reason: "Поселение уже покинуто" };
-    const ok = orderCampaign(sim2.armyState, sq.id, fid, s.x, s.y, sim2.world);
-    return ok ? { ok: true, text: `${sq.name} выступил на ${f.def.name} (${s.x},${s.y})` } : { ok: false, reason: "Дороги туда нет — море или горы" };
+    const ok2 = orderCampaign(sim2.armyState, sq.id, fid, s.x, s.y, sim2.world);
+    return ok2 ? { ok: true, text: `${sq.name} выступил на ${f.def.name} (${s.x},${s.y})` } : { ok: false, reason: "Дороги туда нет — море или горы" };
   }
   function fieldMen(sim2) {
     let n = 0;
@@ -14619,6 +14741,913 @@ h4.group {
     return Number.isFinite(v) ? v : def;
   }
 
+  // app/src/core/systems/link_dynasty.js
+  var LEGIT_START = 55;
+  var LEGIT_DECAY = 0.04;
+  var LEGIT_THRONE_RATE = 0.01;
+  var LEGIT_COURT_RATE = 0.2;
+  var LEGIT_COURT_CAP = 66;
+  var LEGIT_THRONE_CAP = 81;
+  var LEGIT_HUNGER_RATE = 0.05;
+  var LEGIT_SHOCK_RATE = 0.1;
+  var COURT_MAX = 3;
+  var COURT_UPKEEP = [0, 5, 12, 25];
+  var YEAR_DAYS = 100;
+  var ADULT_DAYS = 1200;
+  var FERTILE_END = 4800;
+  var OLD_AGE = 8e3;
+  var DEATH_HARD_AGE = 13200;
+  var MEMBER_CAP = 12;
+  var KIDS_PER_PAIR = 4;
+  var BIRTH_CHANCE = 0.02;
+  var PRETENDER_LEGIT = 20;
+  var PRETENDER_CAP = 5;
+  var PRETENDER_CHANCE = 0.06;
+  var SUPPORT_MAX = 100;
+  var REVOLT_SUPPORT = 85;
+  var REVOLT_CHANCE = 0.03;
+  var REVOLT_STAB_SHOCK2 = -6;
+  var REVOLT_LEGIT_COST = 5;
+  var PLOT_CAP = 3;
+  var PLOT_KINDS = ["scandal", "claim", "poison"];
+  var PLOT_CHANCE = 0.02;
+  var PLOT_LEGIT_MAX = 50;
+  var PLOT_HAPPY_MAX = 40;
+  var SCANDAL_LEGIT_HIT = -2;
+  var CLAIM_SUPPORT_GAIN = 20;
+  var INTERREGNUM_STAB = -12;
+  var INTERREG_AUTO_DAYS = 60;
+  var INTERREG_AUTO_LEGIT = 35;
+  var INTERREG_CHRONIC_STAB = -0.6;
+  var LOW_LEGIT_STAB_AT = 25;
+  var LOW_LEGIT_STAB = -0.5;
+  var DESIGNATE_COST = 8;
+  var DESIGNATE_NOBLE_HIT = 4;
+  var MARRIAGE_GOLD = 60;
+  var MARRIAGE_REL = 15;
+  var MARRIAGE_LEGIT = 3;
+  var USURP_LEGIT = 25;
+  var USURP_STAB_COST = 20;
+  var USURP_MIN_AVG = 45;
+  var USURP_MIN_NOBLES = 50;
+  var EXPOSE_GOLD = 25;
+  var EXPOSE_LEGIT_GAIN = 4;
+  var PARDON_LEGIT_COST = 3;
+  var EXECUTE_LEGIT_GAIN = 5;
+  var EXECUTE_NOBLE_GAIN = 2;
+  var EXECUTE_COMMON_HIT = 3;
+  var ADOPT_GOLD = 120;
+  var ADOPT_LEGIT = 45;
+  var CONFIRM_DAYS2 = 2;
+  var DYN_SEED = 3516552977 >>> 0;
+  var MALE_NAMES2 = [
+    "Ярослав",
+    "Всеволод",
+    "Мстислав",
+    "Ростислав",
+    "Святополк",
+    "Борис",
+    "Глеб",
+    "Игорь",
+    "Олег",
+    "Владимир",
+    "Дмитрий",
+    "Фёдор"
+  ];
+  var FEMALE_NAMES2 = [
+    "Ефросинья",
+    "Ольга",
+    "Анна",
+    "Мария",
+    "Любава",
+    "Мирослава",
+    "Вера",
+    "Аглая"
+  ];
+  var HOUSE_NAMES = [
+    "Рюриковичи",
+    "Соколовы",
+    "Медведевы",
+    "Заречные",
+    "Вельские",
+    "Чернышовы",
+    "Яровые",
+    "Холмогоровы",
+    "Белогоровы",
+    "Стожары",
+    "Лунёвы",
+    "Вышаты"
+  ];
+  var TRAIT_POOL = ["valiant", "cunning", "pious", "beloved"];
+  var STATUS_OK = ["ruler", "spouse", "member"];
+  function clamp13(v, lo, hi) {
+    return v < lo ? lo : v > hi ? hi : v;
+  }
+  function numOf2(v, def) {
+    return Number.isFinite(v) ? v : def;
+  }
+  function intOf(v, def) {
+    const n = Math.round(Number(v));
+    return Number.isFinite(n) ? n : def;
+  }
+  function idOrNull(v) {
+    const n = intOf(v, NaN);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+  function yearsOf(age) {
+    return Math.floor(Math.max(0, numOf2(age, 0)) / YEAR_DAYS);
+  }
+  function traitCount(m) {
+    return m && Array.isArray(m.traits) ? m.traits.length : 0;
+  }
+  function cloneState(st) {
+    const c = JSON.parse(JSON.stringify(st));
+    delete c._rng;
+    return c;
+  }
+  function dynRng(st, worldSeed) {
+    if (st._rng) return st._rng;
+    const r = createRng((numOf2(worldSeed, 0) >>> 0 ^ DYN_SEED) >>> 0);
+    if (Number.isFinite(st.rngState)) r.setState(numOf2(st.rngState, 0) >>> 0);
+    st._rng = r;
+    return r;
+  }
+  function keepRng(st) {
+    if (st._rng) st.rngState = st._rng.getState();
+  }
+  function makeMember(st, o) {
+    const m = {
+      id: st.nextId++,
+      name: String(o.name || "Безымянный"),
+      age: Math.max(0, intOf(o.age, 0)),
+      sex: o.sex === "ж" ? "ж" : "м",
+      traits: Array.isArray(o.traits) ? o.traits.map(String) : [],
+      status: STATUS_OK.includes(o.status) ? o.status : "member",
+      alive: true,
+      deathDay: -1,
+      cause: "",
+      pairWith: o.pairWith != null ? o.pairWith : null,
+      kids: 0
+    };
+    st.members.push(m);
+    return m;
+  }
+  function pickHouse(rng, exclude) {
+    let name = rng.pick(HOUSE_NAMES);
+    for (let i = 0; i < 10 && name === exclude; i++) name = rng.pick(HOUSE_NAMES);
+    if (name === exclude) name = `${exclude} Младшие`;
+    return name;
+  }
+  function createDynastyState() {
+    return {
+      v: 1,
+      day: -1,
+      // сутки последнего расчёта (-1 — ещё не было)
+      house: { name: "", founder: "", generations: 1, throneDays: 0 },
+      members: [],
+      legitimacy: LEGIT_START,
+      court: 0,
+      designated: null,
+      heir: null,
+      pretenders: [],
+      plots: [],
+      marriages: [],
+      interregnum: false,
+      interregnumDays: 0,
+      nextId: 1,
+      plotSeq: 1,
+      lastDelta: 0,
+      lastReasons: [],
+      lastCourtPaid: true,
+      rngState: null
+      // позиция собственного потока случая
+    };
+  }
+  function dynastyInstall(sim2) {
+    const st = createDynastyState();
+    const rng = dynRng(st, sim2 ? sim2.seed : 0);
+    const pol = sim2 && sim2.politics && sim2.politics.state ? sim2.politics.state : null;
+    const polName = pol && pol.ruler && typeof pol.ruler.name === "string" && pol.ruler.name ? pol.ruler.name : null;
+    const gov = pol && typeof pol.gov === "string" ? pol.gov : "chiefdom";
+    const founderName = polName || rng.pick(MALE_NAMES2);
+    st.house = { name: rng.pick(HOUSE_NAMES), founder: founderName, generations: 1, throneDays: 0 };
+    const rAge = rng.int(2800, 5200);
+    const ruler = makeMember(st, { name: founderName, age: rAge, sex: "м", status: "ruler", traits: [] });
+    if (rng.chance(0.75)) {
+      const wAge = Math.max(ADULT_DAYS, rAge - rng.int(0, 600));
+      const wife = makeMember(st, {
+        name: rng.pick(FEMALE_NAMES2),
+        age: Math.min(wAge, FERTILE_END - 200),
+        sex: "ж",
+        status: "spouse",
+        traits: [],
+        pairWith: ruler.id
+      });
+      ruler.pairWith = wife.id;
+      if (rng.chance(0.6)) {
+        const boy = rng.chance(0.5);
+        const kidAgeCap = Math.max(160, rAge - ADULT_DAYS);
+        makeMember(st, {
+          name: boy ? rng.pick(MALE_NAMES2) : rng.pick(FEMALE_NAMES2),
+          age: rng.int(150, kidAgeCap),
+          sex: boy ? "м" : "ж",
+          status: "member",
+          traits: rng.chance(0.5) ? [rng.pick(TRAIT_POOL)] : []
+        });
+      }
+    }
+    st.heir = idOrNull((heirOf(st, gov) || {}).id);
+    keepRng(st);
+    return st;
+  }
+  function heirOf(st, gov) {
+    const ms = st && Array.isArray(st.members) ? st.members : [];
+    const free = (m) => m && m.alive !== false && m.status !== "ruler";
+    if (st && st.designated != null) {
+      const d = ms.find((m) => free(m) && m.id === st.designated);
+      if (d) return d;
+    }
+    if (gov === "republic") return null;
+    const byAge = (a, b) => numOf2(b.age, 0) - numOf2(a.age, 0) || a.id - b.id;
+    if (gov === "chiefdom") {
+      let best = null;
+      for (const m of ms) {
+        if (!free(m) || numOf2(m.age, 0) < ADULT_DAYS) continue;
+        if (!best) {
+          best = m;
+          continue;
+        }
+        const kt = traitCount(m), kb = traitCount(best);
+        if (kt > kb || kt === kb && numOf2(m.age, 0) > numOf2(best.age, 0)) best = m;
+      }
+      return best;
+    }
+    const sons = ms.filter((m) => free(m) && m.sex !== "ж" && numOf2(m.age, 0) >= ADULT_DAYS).sort(byAge);
+    if (sons.length) return sons[0];
+    const any = ms.filter((m) => free(m) && numOf2(m.age, 0) >= ADULT_DAYS).sort(byAge);
+    return any.length ? any[0] : null;
+  }
+  function deathChance2(m) {
+    const age = numOf2(m.age, 0);
+    let p;
+    if (age < FERTILE_END) p = 0;
+    else if (age < OLD_AGE) p = 2e-4;
+    else p = 1e-3 + Math.pow((age - OLD_AGE) / 2e3, 2) * 0.01;
+    if (p > 0 && Array.isArray(m.traits) && m.traits.includes("sickly")) p *= 1.5;
+    if (age >= DEATH_HARD_AGE) p = 1;
+    return Math.min(1, p);
+  }
+  function foundNewHouse(N, rng, legitValue) {
+    const oldName = N.house ? N.house.name : "";
+    N.house = { name: pickHouse(rng, oldName), founder: "", generations: 1, throneDays: 0 };
+    N.members = [];
+    N.nextId = 1;
+    N.plotSeq = 1;
+    N.pretenders = [];
+    N.plots = [];
+    N.marriages = [];
+    N.designated = null;
+    N.heir = null;
+    N.interregnum = false;
+    N.interregnumDays = 0;
+    const fAge = rng.int(2600, 4400);
+    const f = makeMember(N, { name: rng.pick(MALE_NAMES2), age: fAge, sex: "м", status: "ruler", traits: [] });
+    const w = makeMember(N, {
+      name: rng.pick(FEMALE_NAMES2),
+      age: rng.int(2e3, Math.max(2100, Math.min(fAge, FERTILE_END - 100))),
+      sex: "ж",
+      status: "spouse",
+      traits: [],
+      pairWith: f.id
+    });
+    f.pairWith = w.id;
+    makeMember(N, {
+      name: rng.chance(0.5) ? rng.pick(MALE_NAMES2) : rng.pick(FEMALE_NAMES2),
+      age: rng.int(120, 1e3),
+      sex: "м",
+      status: "member",
+      traits: []
+    });
+    N.house.founder = f.name;
+    if (legitValue != null) N.legitimacy = legitValue;
+    return f;
+  }
+  function makePretender(N, rng, sim2) {
+    const fids = sim2 && Array.isArray(sim2.factions) ? sim2.factions.filter((f) => f && f.id && f.alive !== false).map((f) => f.id) : [];
+    const female = rng.chance(0.3);
+    return {
+      id: N.nextId++,
+      name: rng.pick(female ? FEMALE_NAMES2 : MALE_NAMES2),
+      house: rng.pick(HOUSE_NAMES),
+      fid: fids.length && rng.chance(0.6) ? rng.pick(fids) : null,
+      support: rng.int(8, 30)
+    };
+  }
+  function fillPretenders(N, rng, want, sim2) {
+    if (!Array.isArray(N.pretenders)) N.pretenders = [];
+    while (N.pretenders.length < want) N.pretenders.push(makePretender(N, rng, sim2));
+  }
+  function spawnPlot(N, rng) {
+    const kinds = ["scandal"];
+    if (N.pretenders.length) kinds.push("claim");
+    const ruler = N.members.find((m) => m.alive !== false && m.status === "ruler");
+    const target = N.heir != null && N.members.find((m) => m.id === N.heir && m.alive !== false) || ruler;
+    if (target) kinds.push("poison");
+    const kind = rng.pick(kinds);
+    const by = N.pretenders.length && rng.chance(0.5) ? rng.pick(N.pretenders).name : rng.pick(rng.chance(0.5) ? MALE_NAMES2 : FEMALE_NAMES2);
+    N.plots.push({
+      id: N.plotSeq++,
+      kind,
+      days: 0,
+      need: rng.int(6, 14),
+      by,
+      targetId: kind === "poison" && target ? target.id : null
+    });
+  }
+  function progressPlots(N, rng, events, day) {
+    if (!Array.isArray(N.plots)) N.plots = [];
+    const stay = [];
+    for (const pl of N.plots) {
+      if (!pl || !PLOT_KINDS.includes(pl.kind)) continue;
+      pl.days = Math.max(0, numOf2(pl.days, 0)) + 1;
+      if (pl.days < Math.max(1, numOf2(pl.need, 10))) {
+        stay.push(pl);
+        continue;
+      }
+      if (pl.kind === "scandal") {
+        N.legitimacy = clamp13(numOf2(N.legitimacy, LEGIT_START) + SCANDAL_LEGIT_HIT, 0, 100);
+        events.push({ text: `🗣 Заговор ${pl.by}: скандал при дворе дошёл до народа.`, type: "bad" });
+      } else if (pl.kind === "claim") {
+        const p = N.pretenders.slice().sort((a, b) => numOf2(b.support, 0) - numOf2(a.support, 0))[0];
+        if (p) p.support = clamp13(numOf2(p.support, 0) + CLAIM_SUPPORT_GAIN, 0, SUPPORT_MAX);
+        events.push({ text: `📜 ${pl.by}: чужие грамоты о праве на трон ходят по рукам.`, type: "warn" });
+      } else {
+        const t = N.members.find((m) => m.id === pl.targetId && m.alive !== false);
+        if (t) {
+          t.alive = false;
+          t.deathDay = day;
+          t.cause = "яд";
+          events.push({
+            text: `☠ Яд в кубке: ${t.name} умер не своей смертью.`,
+            type: "bad",
+            chronicle: t.status === "ruler"
+          });
+        } else {
+          events.push({ text: `☠ Покушение ${pl.by} сорвалось: яд не дошёл до цели.`, type: "info" });
+        }
+      }
+    }
+    N.plots = stay;
+  }
+  function silenceRep(st) {
+    return { mods: { happy: 0, stab: 0 }, reasons: [], events: [], flags: { state: st, courtGold: 0 } };
+  }
+  function dynastyNewDay(sim2) {
+    const day = numOf2(sim2 && sim2.day, 0);
+    const st = sim2 && sim2.linkDynasty && typeof sim2.linkDynasty === "object" ? sim2.linkDynasty : createDynastyState();
+    if (st.day === day) return silenceRep(st);
+    const pol = sim2 && sim2.politics && sim2.politics.state ? sim2.politics.state : null;
+    const gov = pol && typeof pol.gov === "string" ? pol.gov : "chiefdom";
+    const happyNow = numOf2(sim2 && sim2._happy, 50);
+    if (gov === "republic") {
+      const N2 = cloneState(st);
+      N2.day = day;
+      for (const m of N2.members) if (m.alive !== false) m.age = numOf2(m.age, 0) + 1;
+      return silenceRep(N2);
+    }
+    const N = cloneState(st);
+    const rng = dynRng(N, sim2 ? sim2.seed : 0);
+    const reasons = [];
+    const events = [];
+    let stabToday = null;
+    let happyMod3 = 0;
+    let interregStartedHere = false;
+    N.day = day;
+    if (N.house) N.house.throneDays = numOf2(N.house.throneDays, 0) + 1;
+    for (const m of N.members) {
+      if (m.alive === false) continue;
+      m.age = numOf2(m.age, 0) + 1;
+      if (rng.next() < deathChance2(m)) {
+        m.alive = false;
+        m.deathDay = day;
+        m.cause = Array.isArray(m.traits) && m.traits.includes("sickly") ? "хворь" : "старость";
+        if (m.status === "ruler") {
+          events.push({ text: `✝ ${m.name} умер на ${yearsOf(m.age)}-м году жизни.`, type: "warn", chronicle: true });
+        } else if (m.status === "spouse") {
+          events.push({ text: `✝ ${m.name}, супруга дома ${N.house.name}, отошла ко сну.`, type: "info" });
+        }
+      }
+    }
+    progressPlots(N, rng, events, day);
+    let ruler = N.members.find((m) => m.alive !== false && m.status === "ruler");
+    if (!ruler && !N.interregnum) {
+      const heirM = heirOf(N, gov);
+      if (heirM) {
+        heirM.status = "ruler";
+        N.house.generations = numOf2(N.house.generations, 1) + 1;
+        N.designated = null;
+        events.push({
+          text: `⚔ Трон занял ${heirM.name} — дом ${N.house.name} продолжается.`,
+          type: "warn",
+          chronicle: true
+        });
+      } else {
+        N.interregnum = true;
+        N.interregnumDays = 1;
+        N.designated = null;
+        N.heir = null;
+        interregStartedHere = true;
+        stabToday = INTERREGNUM_STAB;
+        fillPretenders(N, rng, 3, sim2);
+        events.push({
+          text: `⚔ Род ${N.house.name} пресёкся: правителя не стало, наследника нет. Междуцарствие!`,
+          type: "bad",
+          chronicle: true
+        });
+      }
+    }
+    if (N.interregnum && !interregStartedHere) {
+      N.interregnumDays = Math.max(0, numOf2(N.interregnumDays, 0)) + 1;
+    }
+    if (N.interregnum) {
+      for (const p of N.pretenders) {
+        p.support = clamp13(numOf2(p.support, 0) + rng.int(-1, 2), 0, SUPPORT_MAX);
+      }
+      reasons.push(`Междуцарствие: ${N.interregnumDays}-й день без законной власти`);
+    }
+    ruler = N.members.find((m) => m.alive !== false && m.status === "ruler");
+    if (!N.interregnum && ruler && N.legitimacy <= PRETENDER_LEGIT && N.pretenders.length < PRETENDER_CAP && rng.chance(PRETENDER_CHANCE)) {
+      if (!Array.isArray(N.pretenders)) N.pretenders = [];
+      const p = makePretender(N, rng, sim2);
+      N.pretenders.push(p);
+      events.push({
+        text: `🗡 Явился претендент ${p.name} из дома ${p.house}: говорит, что кровь права его.`,
+        type: "warn"
+      });
+    }
+    if (!N.interregnum && ruler) {
+      for (let i = 0; i < N.pretenders.length; i++) {
+        const p = N.pretenders[i];
+        if (numOf2(p.support, 0) >= REVOLT_SUPPORT && rng.chance(REVOLT_CHANCE)) {
+          N.pretenders.splice(i, 1);
+          stabToday = (stabToday == null ? 0 : stabToday) + REVOLT_STAB_SHOCK2;
+          N.legitimacy = clamp13(numOf2(N.legitimacy, LEGIT_START) - REVOLT_LEGIT_COST, 0, 100);
+          events.push({
+            text: `🗡 МЯТЕЖ: ${p.name} поднял оружие, заявляя право на трон!`,
+            type: "bad",
+            chronicle: true
+          });
+          break;
+        }
+      }
+    }
+    if (!N.interregnum && ruler && N.plots.length < PLOT_CAP && (N.legitimacy < PLOT_LEGIT_MAX || happyNow < PLOT_HAPPY_MAX) && rng.chance(PLOT_CHANCE)) {
+      spawnPlot(N, rng);
+    }
+    let aliveCount4 = N.members.reduce((a, m) => a + (m.alive !== false ? 1 : 0), 0);
+    if (aliveCount4 < MEMBER_CAP) {
+      for (const mo of N.members) {
+        if (aliveCount4 >= MEMBER_CAP) break;
+        if (mo.alive === false || mo.sex !== "ж" || mo.pairWith == null) continue;
+        if (mo.kids >= KIDS_PER_PAIR) continue;
+        const age = numOf2(mo.age, 0);
+        if (age < ADULT_DAYS || age >= FERTILE_END) continue;
+        const fa = N.members.find((x) => x.id === mo.pairWith && x.alive !== false);
+        if (!fa || fa.kids >= KIDS_PER_PAIR || numOf2(fa.age, 0) < ADULT_DAYS) continue;
+        if (!rng.chance(BIRTH_CHANCE)) continue;
+        const boy = rng.chance(0.5);
+        const baby = makeMember(N, {
+          name: boy ? rng.pick(MALE_NAMES2) : rng.pick(FEMALE_NAMES2),
+          age: 0,
+          sex: boy ? "м" : "ж",
+          status: "member",
+          traits: []
+        });
+        mo.kids++;
+        fa.kids++;
+        aliveCount4++;
+        events.push({ text: `👶 В доме ${N.house.name} родился ребёнок — ${baby.name}.`, type: "good" });
+      }
+    }
+    const courtLv = clamp13(intOf(N.court, 0), 0, COURT_MAX);
+    const upkeep = COURT_UPKEEP[courtLv] || 0;
+    const paid = numOf2(sim2 && sim2.res && sim2.res.gold, 0) >= upkeep;
+    N.lastCourtPaid = paid;
+    const L0 = clamp13(numOf2(N.legitimacy, LEGIT_START), 0, 100);
+    let d = -LEGIT_DECAY;
+    if (paid && L0 < LEGIT_COURT_CAP) d += courtLv * LEGIT_COURT_RATE;
+    if (L0 < LEGIT_THRONE_CAP) d += (happyNow - 50) * LEGIT_THRONE_RATE;
+    const hungerDays = Math.max(0, numOf2(sim2 && sim2.linkSurvival && sim2.linkSurvival.hungerDays, 0));
+    if (hungerDays > 0) {
+      const pen = hungerDays * LEGIT_HUNGER_RATE;
+      d -= pen;
+      reasons.push(`Голод в державе: ${hungerDays}-е сутки впроголодь (−${pen.toFixed(2)} законности)`);
+    }
+    const shockDays = Math.max(0, numOf2(sim2 && sim2.linkTerritory && sim2.linkTerritory.shock, 0));
+    if (shockDays > 0) {
+      const pen = shockDays * LEGIT_SHOCK_RATE;
+      d -= pen;
+      reasons.push(`Траур по потерянным землям: род проглядел город (−${pen.toFixed(2)})`);
+    }
+    if (!paid && courtLv > 0) reasons.push("Казна пуста: двор содержать нечем, слуги разбегаются");
+    N.lastDelta = d;
+    N.legitimacy = clamp13(L0 + d, 0, 100);
+    if (N.interregnum && N.interregnumDays > INTERREG_AUTO_DAYS) {
+      const f = foundNewHouse(N, rng, INTERREG_AUTO_LEGIT);
+      events.push({
+        text: `👑 Смуте конец: знать возвела на трон дом ${N.house.name} — правитель ${f.name}.`,
+        type: "good",
+        chronicle: true
+      });
+    }
+    if (!N.interregnum) N.heir = idOrNull((heirOf(N, gov) || {}).id);
+    else N.heir = null;
+    const flags = { state: N, courtGold: paid ? upkeep : 0 };
+    const lr = N.members.find((m) => m.alive !== false && m.status === "ruler");
+    const polName = pol && pol.ruler ? pol.ruler.name : null;
+    if (lr && lr.name !== polName) {
+      flags.newRuler = {
+        name: lr.name,
+        ageYears: yearsOf(lr.age),
+        traits: Array.isArray(lr.traits) ? lr.traits.slice() : []
+      };
+    }
+    let stab;
+    if (stabToday != null) {
+      stab = stabToday;
+    } else {
+      stab = 0;
+      if (N.interregnum) stab += INTERREG_CHRONIC_STAB;
+      if (N.legitimacy < LOW_LEGIT_STAB_AT) stab += LOW_LEGIT_STAB;
+    }
+    if (!N.interregnum && N.pretenders.length) happyMod3 -= 2;
+    if (!N.interregnum && N.legitimacy < PRETENDER_LEGIT) happyMod3 -= 3;
+    N.lastReasons = reasons.slice();
+    keepRng(N);
+    return { mods: { happy: Math.round(happyMod3), stab }, reasons, events, flags };
+  }
+  function dynastyHappyMod(sim2) {
+    const rep = sim2 && sim2.sys ? sim2.sys.dynLinks : null;
+    const h = rep && rep.mods ? rep.mods.happy : null;
+    return Number.isFinite(h) ? h : 0;
+  }
+  var ok = (text) => ({ ok: true, text });
+  var no = (reason) => ({ ok: false, reason });
+  function handleDynastyAction(sim2, spec) {
+    const parts = String(spec || "").split(":");
+    const kind = parts[0];
+    const st = sim2 && sim2.linkDynasty && typeof sim2.linkDynasty === "object" ? sim2.linkDynasty : null;
+    const pst = sim2 && sim2.politics && sim2.politics.state ? sim2.politics.state : null;
+    if (kind === "court") {
+      if (!st) return no("Род ещё не основан");
+      const lvl = intOf(parts[1], -1);
+      if (!(lvl >= 0 && lvl <= COURT_MAX)) return no("Такого уровня содержания нет");
+      st.court = lvl;
+      return ok(lvl > 0 ? `Двор содержится щедрее: уровень ${lvl} (${COURT_UPKEEP[lvl]}🪙 в день)` : "Двор урезан до необходимого");
+    }
+    if (kind === "heir") {
+      if (!st) return no("Род ещё не основан");
+      const id = intOf(parts[1], NaN);
+      const m = st.members.find((x) => x.id === id);
+      if (!m || m.alive === false) return no("Такого человека в роду нет");
+      if (m.status === "ruler") return no("Правитель сам себе наследником не бывает");
+      if (st.heir === id) return no(`${m.name} и так наследник — воля не меняется`);
+      st.legitimacy = Math.max(0, numOf2(st.legitimacy, LEGIT_START) - DESIGNATE_COST);
+      if (pst && pst.factions && Number.isFinite(pst.factions.nobles)) {
+        pst.factions.nobles = clamp13(pst.factions.nobles - DESIGNATE_NOBLE_HIT, 0, 100);
+      }
+      st.designated = id;
+      st.heir = id;
+      return ok(`Воля правителя объявлена: наследник — ${m.name} (−${DESIGNATE_COST} законности, знать ропщет)`);
+    }
+    if (kind === "marry") {
+      if (!st) return no("Род ещё не основан");
+      const fid = String(parts[1] || "").trim();
+      if (!fid) return no("Не назван дом, с которым свататься");
+      const heirM = st.members.find((m) => m.id === st.heir && m.alive !== false);
+      if (!heirM) return no("Наследника нет — сватать некому");
+      if (heirM.pairWith != null) return no(`${heirM.name} уже обручён`);
+      if (numOf2(heirM.age, 0) < ADULT_DAYS) return no("Наследник ещё дитя — брак погодим");
+      if (numOf2(sim2 && sim2.res && sim2.res.gold, 0) < MARRIAGE_GOLD) {
+        return no(`Сватовство стоит ${MARRIAGE_GOLD}🪙 — казна не даст`);
+      }
+      sim2.res.gold -= MARRIAGE_GOLD;
+      const rng = dynRng(st, sim2.seed);
+      if (typeof sim2.adjustRel === "function") sim2.adjustRel(fid, MARRIAGE_REL, "Брачный союз");
+      else if (sim2.relations) sim2.relations[fid] = numOf2(sim2.relations[fid], 0) + MARRIAGE_REL;
+      const bride = makeMember(st, {
+        name: rng.pick(FEMALE_NAMES2),
+        age: rng.int(ADULT_DAYS + 200, FERTILE_END - 400),
+        sex: "ж",
+        status: "spouse",
+        traits: []
+      });
+      bride.pairWith = heirM.id;
+      heirM.pairWith = bride.id;
+      if (!Array.isArray(st.marriages)) st.marriages = [];
+      st.marriages.push({ fid, memberId: heirM.id, day: numOf2(sim2 && sim2.day, 0) });
+      st.legitimacy = clamp13(numOf2(st.legitimacy, LEGIT_START) + MARRIAGE_LEGIT, 0, 100);
+      keepRng(st);
+      return ok(`${heirM.name} берёт в жёны девицу из дома ${fid}: +${MARRIAGE_REL} отношений, +${MARRIAGE_LEGIT} законности`);
+    }
+    if (kind === "usurp") {
+      if (!st) return no("Род ещё не основан");
+      if (!pst) return no("Политика не подключена: перевороту не на что опереться");
+      if (st.interregnum === true) return no("Трон и так пуст — воцаряйте новый дом, а не свергайте старый");
+      const F = pst.factions || {};
+      const vals = Object.keys(F).map((k) => numOf2(F[k], 0));
+      const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+      const nobles = numOf2(F.nobles, 0);
+      if (avg < USURP_MIN_AVG || nobles < USURP_MIN_NOBLES) {
+        return no(`Сословия не поднимутся с вами: средняя поддержка ${Math.round(avg)}, знать ${Math.round(nobles)}. Сперва заслужите доверие`);
+      }
+      const today = numOf2(sim2 && sim2.day, 0);
+      const awaiting = Number.isFinite(st.usurpConfirmDay) && Math.abs(today - st.usurpConfirmDay) <= CONFIRM_DAYS2;
+      if (!awaiting) {
+        st.usurpConfirmDay = today;
+        return {
+          ok: true,
+          confirm: true,
+          text: "Переворот необратим: дом будет сменён, порядок пошатнётся. Нажмите ещё раз."
+        };
+      }
+      st.usurpConfirmDay = null;
+      const rng = dynRng(st, sim2.seed);
+      const oldName = st.house ? st.house.name : "";
+      const f = foundNewHouse(st, rng, USURP_LEGIT);
+      pst.stability = clamp13(numOf2(pst.stability, 60) - USURP_STAB_COST, 0, 100);
+      pst.ruler = {
+        name: f.name,
+        age: yearsOf(f.age),
+        since: today,
+        traits: Array.isArray(f.traits) ? f.traits.slice() : []
+      };
+      pst.rulersCount = Math.max(1, numOf2(pst.rulersCount, 1) || 1) + 1;
+      if (typeof sim2.addChronicle === "function") {
+        sim2.addChronicle(`Переворот: дом ${st.house.name} сменил ${oldName || "старый род"} на троне (день ${today}).`);
+      }
+      keepRng(st);
+      return ok(`Переворот свершился: правит ${f.name} из дома ${st.house.name}. Стабильность −${USURP_STAB_COST}`);
+    }
+    if (kind === "expose" || kind === "pardon" || kind === "execute") {
+      if (!st) return no("Род ещё не основан");
+      const id = intOf(parts[1], NaN);
+      const idx = (st.plots || []).findIndex((p) => p && p.id === id);
+      if (idx < 0) return no("Такого заговора нет — либо он уже разобран");
+      const plot = st.plots[idx];
+      if (kind === "expose") {
+        if (numOf2(sim2 && sim2.res && sim2.res.gold, 0) < EXPOSE_GOLD) {
+          return no(`Шептунам платят: раскрытие стоит ${EXPOSE_GOLD}🪙`);
+        }
+        sim2.res.gold -= EXPOSE_GOLD;
+        st.legitimacy = clamp13(numOf2(st.legitimacy, LEGIT_START) + EXPOSE_LEGIT_GAIN, 0, 100);
+        st.plots.splice(idx, 1);
+        return ok(`Заговор ${plot.by} раскрыт вовремя: +${EXPOSE_LEGIT_GAIN} законности`);
+      }
+      if (kind === "pardon") {
+        st.legitimacy = Math.max(0, numOf2(st.legitimacy, LEGIT_START) - PARDON_LEGIT_COST);
+        st.plots.splice(idx, 1);
+        return ok(`${plot.by} помилован: милосердие обошлось в ${PARDON_LEGIT_COST} законности`);
+      }
+      st.legitimacy = clamp13(numOf2(st.legitimacy, LEGIT_START) + EXECUTE_LEGIT_GAIN, 0, 100);
+      if (pst && pst.factions) {
+        if (Number.isFinite(pst.factions.nobles)) {
+          pst.factions.nobles = clamp13(pst.factions.nobles + EXECUTE_NOBLE_GAIN, 0, 100);
+        }
+        if (Number.isFinite(pst.factions.commons)) {
+          pst.factions.commons = clamp13(pst.factions.commons - EXECUTE_COMMON_HIT, 0, 100);
+        }
+      }
+      st.plots.splice(idx, 1);
+      return ok(`${plot.by} казнён: страх держит двор крепче (+${EXECUTE_LEGIT_GAIN} законности, народ скорбит)`);
+    }
+    if (kind === "adopt") {
+      if (!st) return no("Род ещё не основан");
+      if (st.interregnum !== true) return no("Престол занят: воцарять можно только в междуцарствие");
+      if (numOf2(sim2 && sim2.res && sim2.res.gold, 0) < ADOPT_GOLD) {
+        return no(`Знать соблюдает приличия: воцарение стоит ${ADOPT_GOLD}🪙`);
+      }
+      sim2.res.gold -= ADOPT_GOLD;
+      const rng = dynRng(st, sim2.seed);
+      const f = foundNewHouse(st, rng, ADOPT_LEGIT);
+      if (pst) {
+        pst.ruler = {
+          name: f.name,
+          age: yearsOf(f.age),
+          since: numOf2(sim2 && sim2.day, 0),
+          traits: Array.isArray(f.traits) ? f.traits.slice() : []
+        };
+        pst.rulersCount = Math.max(1, numOf2(pst.rulersCount, 1) || 1) + 1;
+      }
+      if (typeof sim2.addChronicle === "function") {
+        sim2.addChronicle(`Междуцарствие кончено: воцарён дом ${st.house.name}, правитель ${f.name}.`);
+      }
+      keepRng(st);
+      return ok(`Новый дом воцарён: ${st.house.name}, правитель ${f.name}`);
+    }
+    return no("Неизвестное действие двора");
+  }
+  function houseOut(h) {
+    const src = h && typeof h === "object" ? h : {};
+    return {
+      name: typeof src.name === "string" ? src.name : "",
+      founder: typeof src.founder === "string" ? src.founder : "",
+      generations: Math.max(1, intOf(src.generations, 1)),
+      throneDays: Math.max(0, intOf(src.throneDays, 0))
+    };
+  }
+  function memberOut(m) {
+    return {
+      id: Math.max(1, intOf(m && m.id, 1)),
+      name: m && typeof m.name === "string" ? m.name : "Безымянный",
+      age: Math.max(0, intOf(m && m.age, 0)),
+      sex: m && m.sex === "ж" ? "ж" : "м",
+      status: STATUS_OK.includes(m && m.status) ? m.status : "member",
+      traits: m && Array.isArray(m.traits) ? m.traits.map(String) : [],
+      alive: !(m && m.alive === false),
+      deathDay: intOf(m && m.deathDay, -1),
+      cause: m && typeof m.cause === "string" ? m.cause : "",
+      pairWith: idOrNull(m && m.pairWith),
+      kids: Math.max(0, intOf(m && m.kids, 0))
+    };
+  }
+  function pretenderOut(p) {
+    return {
+      id: Math.max(1, intOf(p && p.id, 1)),
+      name: p && typeof p.name === "string" ? p.name : "Самозванец",
+      house: p && typeof p.house === "string" ? p.house : "Чужие",
+      fid: p && typeof p.fid === "string" ? p.fid : null,
+      support: clamp13(intOf(p && p.support, 0), 0, SUPPORT_MAX)
+    };
+  }
+  function plotOut(p) {
+    const kind = p && PLOT_KINDS.includes(p.kind) ? p.kind : "scandal";
+    return {
+      id: Math.max(1, intOf(p && p.id, 1)),
+      kind,
+      days: Math.max(0, intOf(p && p.days, 0)),
+      need: clamp13(intOf(p && p.need, 10), 1, 9999),
+      by: p && typeof p.by === "string" ? p.by : "Кто-то",
+      targetId: idOrNull(p && p.targetId)
+    };
+  }
+  function marriageOut(mr) {
+    return {
+      fid: mr && typeof mr.fid === "string" ? mr.fid : "",
+      memberId: Math.max(1, intOf(mr && mr.memberId, 1)),
+      day: Math.max(0, intOf(mr && mr.day, 0))
+    };
+  }
+  function serializeDynasty(sim2) {
+    const st = sim2 && sim2.linkDynasty && typeof sim2.linkDynasty === "object" ? sim2.linkDynasty : null;
+    if (!st) return null;
+    return {
+      v: 1,
+      day: intOf(st.day, -1),
+      house: houseOut(st.house),
+      members: (Array.isArray(st.members) ? st.members : []).map(memberOut),
+      legitimacy: numOf2(st.legitimacy, LEGIT_START),
+      court: clamp13(intOf(st.court, 0), 0, COURT_MAX),
+      designated: idOrNull(st.designated),
+      heir: idOrNull(st.heir),
+      pretenders: (Array.isArray(st.pretenders) ? st.pretenders : []).map(pretenderOut),
+      plots: (Array.isArray(st.plots) ? st.plots : []).map(plotOut),
+      marriages: (Array.isArray(st.marriages) ? st.marriages : []).map(marriageOut),
+      interregnum: st.interregnum === true,
+      interregnumDays: Math.max(0, intOf(st.interregnumDays, 0)),
+      nextId: Math.max(1, intOf(st.nextId, 1)),
+      plotSeq: Math.max(1, intOf(st.plotSeq, 1)),
+      lastDelta: numOf2(st.lastDelta, 0),
+      lastReasons: (Array.isArray(st.lastReasons) ? st.lastReasons : []).map(String),
+      lastCourtPaid: st.lastCourtPaid !== false,
+      rngState: Number.isFinite(st.rngState) ? st.rngState >>> 0 : (numOf2(sim2 && sim2.seed, 0) >>> 0 ^ DYN_SEED) >>> 0
+    };
+  }
+  function restoreDynasty(holder, data) {
+    const st = createDynastyState();
+    const d = data && typeof data === "object" && !Array.isArray(data) ? data : {};
+    st.day = intOf(d.day, -1);
+    if (st.house) {
+      const h = houseOut(d.house);
+      st.house = h;
+    }
+    st.members = (Array.isArray(d.members) ? d.members : []).filter((m) => m && typeof m === "object").map(memberOut);
+    st.legitimacy = Number.isFinite(Number(d.legitimacy)) ? clamp13(Number(d.legitimacy), 0, 100) : LEGIT_START;
+    st.court = clamp13(intOf(d.court, 0), 0, COURT_MAX);
+    st.designated = idOrNull(d.designated);
+    st.heir = idOrNull(d.heir);
+    st.pretenders = (Array.isArray(d.pretenders) ? d.pretenders : []).filter((p) => p && typeof p === "object" && !Array.isArray(p)).map(pretenderOut);
+    st.plots = (Array.isArray(d.plots) ? d.plots : []).filter((p) => p && typeof p === "object" && PLOT_KINDS.includes(p.kind)).map(plotOut);
+    st.marriages = (Array.isArray(d.marriages) ? d.marriages : []).filter((m) => m && typeof m === "object").map(marriageOut);
+    st.interregnum = d.interregnum === true;
+    st.interregnumDays = Math.max(0, intOf(d.interregnumDays, 0));
+    const maxMemberId = st.members.reduce((a, m) => Math.max(a, m.id), 0);
+    st.nextId = Math.max(1, intOf(d.nextId, 1), maxMemberId + 1);
+    st.plotSeq = Math.max(1, intOf(d.plotSeq, 1));
+    st.lastDelta = numOf2(d.lastDelta, 0);
+    st.lastReasons = (Array.isArray(d.lastReasons) ? d.lastReasons : []).map(String);
+    st.lastCourtPaid = d.lastCourtPaid !== false;
+    st.rngState = Number.isFinite(d.rngState) ? d.rngState >>> 0 : null;
+    st.usurpConfirmDay = null;
+    if (holder && typeof holder === "object") holder.linkDynasty = st;
+    return st;
+  }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function sign3(v) {
+    const n = Number(v) || 0;
+    return `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).toFixed(2)}`;
+  }
+  function memberRow(m, mark) {
+    const years = yearsOf(m.age);
+    const role = m.status === "ruler" ? "правитель" : m.status === "spouse" ? "супруг(а)" : "родич";
+    return `<div class="kv"><span>${mark || ""}${esc(m.name)}</span><span>${years} лет · ${role}${m.alive ? "" : ` · ${esc(m.cause || "умер")}`}</span></div>`;
+  }
+  function renderDynastyPanel(sim2) {
+    const st = sim2 && sim2.linkDynasty && typeof sim2.linkDynasty === "object" ? sim2.linkDynasty : null;
+    if (!st) {
+      return '<div class="card"><div class="ttl"><span>Род</span></div><div class="desc">Королевский род ещё не основан: держава держится на правителе без дома и без знамени.</div></div>';
+    }
+    const pol = sim2 && sim2.politics && sim2.politics.state ? sim2.politics.state : null;
+    const gov = pol && typeof pol.gov === "string" ? pol.gov : "chiefdom";
+    const L = clamp13(numOf2(st.legitimacy, LEGIT_START), 0, 100);
+    const col = L >= 50 ? "var(--good)" : L >= PRETENDER_LEGIT ? "var(--warn)" : "var(--bad)";
+    const ruler = st.members.find((m) => m.alive !== false && m.status === "ruler");
+    const heirM = st.members.find((m) => m.id === st.heir && m.alive !== false);
+    let html = `<h4 class="group">Род при троне</h4>`;
+    html += `<div class="card"><div class="ttl"><span>Дом ${esc(st.house.name)}</span><span class="cost">${st.house.generations}-е поколение</span></div><div class="desc">Основатель: ${esc(st.house.founder)}. Дом при власти ${Math.round(numOf2(st.house.throneDays, 0) / YEAR_DAYS)} лет.</div><div class="kv"><span>Законность</span><span style="color:${col}">${Math.round(L)} из 100</span></div><div class="relbar"><div style="width:${Math.round(L)}%;background:${col}"></div></div><div class="kv"><span>Ход дня</span><span>${sign3(st.lastDelta)} законности</span></div>`;
+    for (const r of st.lastReasons || []) html += `<div class="reason">${esc(r)}</div>`;
+    if (st.interregnum) {
+      const left = Math.max(0, INTERREG_AUTO_DAYS - st.interregnumDays);
+      html += `<div class="reason">⚔ МЕЖДУЦАРСТВИЕ: ${st.interregnumDays}-й день пустого трона. Без решения знать воцарит новый дом через ~${left} дн. <button class="btn" data-dyn="adopt">Воцарить новый дом (${ADOPT_GOLD}🪙)</button></div>`;
+    }
+    html += "</div>";
+    html += '<h4 class="group">Двор</h4><div class="card">';
+    for (let i = 0; i <= COURT_MAX; i++) {
+      const act = st.court === i;
+      html += `<button class="btn ${act ? "primary" : ""}" style="width:100%;margin-top:6px" data-dyn="court:${i}">${act ? "● " : ""}Содержание двора ${i}${i ? ` — ${COURT_UPKEEP[i]}🪙/день` : " (ничего)"}</button>`;
+    }
+    html += "</div>";
+    html += `<h4 class="group">Преемственность (${gov})</h4><div class="card">`;
+    html += heirM ? memberRow({ ...heirM, status: "ruler" }, "▶ Наследник: ") : '<div class="reason">Наследника по закону нет.</div>';
+    const cands = st.members.filter((m) => m.alive !== false && m.status !== "ruler" && numOf2(m.age, 0) >= ADULT_DAYS).slice(0, 5);
+    for (const m of cands) {
+      html += `<button class="btn" style="width:100%;margin-top:6px" data-dyn="heir:${m.id}"${st.designated === m.id ? " disabled" : ""}>Назначить наследником: ${esc(m.name)} (−${DESIGNATE_COST} законности)</button>`;
+    }
+    if (heirM && heirM.pairWith == null && numOf2(heirM.age, 0) >= ADULT_DAYS && !st.interregnum) {
+      const fids = (sim2.factions || []).filter((f) => f && f.alive !== false).slice(0, 4);
+      for (const f of fids) {
+        const nm = f.def ? f.def.name : f.id;
+        html += `<button class="btn" style="width:100%;margin-top:6px" data-dyn="marry:${esc(f.id)}">Сослать брак с домом ${esc(nm)} (${MARRIAGE_GOLD}🪙, +${MARRIAGE_REL} отношений)</button>`;
+      }
+    }
+    html += "</div>";
+    html += `<h4 class="group">Род: ${st.members.filter((m) => m.alive !== false).length} живых (потолок ${MEMBER_CAP})</h4><div class="card">`;
+    for (const m of st.members.slice(-12)) html += memberRow(m, "");
+    html += "</div>";
+    if (st.pretenders.length) {
+      html += '<h4 class="group">Претенденты на трон</h4>';
+      for (const p of st.pretenders) {
+        const sup = clamp13(numOf2(p.support, 0), 0, SUPPORT_MAX);
+        html += `<div class="card"><div class="ttl"><span>${esc(p.name)} из дома ${esc(p.house)}</span><span class="cost">поддержка ${Math.round(sup)}</span></div><div class="relbar"><div style="width:${Math.round(sup)}%;background:var(--bad)"></div></div></div>`;
+      }
+    }
+    if (st.plots.length) {
+      html += '<h4 class="group">Заговоры при дворе</h4>';
+      for (const p of st.plots) {
+        const kindRu = { scandal: "скандал", claim: "чужое право", poison: "яд" }[p.kind] || p.kind;
+        html += `<div class="card"><div class="ttl"><span>${esc(p.by)}: ${kindRu}</span><span class="cost">${p.days}/${Math.max(1, p.need)} дн.</span></div><button class="btn" data-dyn="expose:${p.id}">Раскрыть (${EXPOSE_GOLD}🪙, +${EXPOSE_LEGIT_GAIN})</button> <button class="btn" data-dyn="pardon:${p.id}">Простить (−${PARDON_LEGIT_COST})</button> <button class="btn danger" data-dyn="execute:${p.id}">Казнить (+${EXECUTE_LEGIT_GAIN})</button></div>`;
+      }
+    }
+    const F = pol && pol.factions ? pol.factions : {};
+    const vals = Object.keys(F).map((k) => numOf2(F[k], 0));
+    const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    const canUsurp = avg >= USURP_MIN_AVG && numOf2(F.nobles, 0) >= USURP_MIN_NOBLES;
+    const waiting = Number.isFinite(st.usurpConfirmDay) && Math.abs(numOf2(sim2 && sim2.day, 0) - st.usurpConfirmDay) <= CONFIRM_DAYS2;
+    html += `<h4 class="group">Свергнуть дом</h4><div class="card"><div class="desc">Поддержка сословий: средняя ${Math.round(avg)}, знать ${Math.round(numOf2(F.nobles, 0))}. Нужно хотя бы ${USURP_MIN_AVG} и ${USURP_MIN_NOBLES} у знати — иначе мятеж никто не поднимет.</div>` + (canUsurp ? `<button class="btn ${waiting ? "danger" : ""}" style="width:100%" data-dyn="usurp">${waiting ? "ПОДТВЕРДИТЬ переворот: назад пути нет" : "Совершить переворот"} (законность ${USURP_LEGIT}, порядок −${USURP_STAB_COST})</button>` : '<div class="reason">Переворот невозможен: сословия слабы.</div>') + "</div>";
+    return html;
+  }
+  function bindDynastyPanel(root, sim2, opts = {}) {
+    if (!root || typeof root.querySelectorAll !== "function" || !sim2) return 0;
+    let bound = 0;
+    for (const el of Array.from(root.querySelectorAll("[data-dyn]"))) {
+      const spec = el.dataset && el.dataset.dyn || (typeof el.getAttribute === "function" ? el.getAttribute("data-dyn") : "");
+      el.onclick = () => {
+        const r = handleDynastyAction(sim2, spec);
+        if (!r.ok) {
+          if (opts.toast) opts.toast(r.reason || "Отказано", "warn");
+        } else {
+          if (opts.toast && r.text) opts.toast(r.text, r.confirm ? "warn" : "good");
+          if (opts.refresh) opts.refresh();
+        }
+        return r;
+      };
+      bound++;
+    }
+    return bound;
+  }
+
   // app/src/core/systems/build2.js
   var TECH_BY_ID4 = Object.fromEntries(TECHS.map((t) => [t.id, t]));
   var QUEUE_MAX = 20;
@@ -15001,7 +16030,7 @@ h4.group {
         );
         g2.tx = num13(h.tx, g2.cx);
         g2.ty = num13(h.ty, g2.cy);
-        g2.fear = clamp13(num13(h.fear, 0), 0, FEAR_MAX);
+        g2.fear = clamp14(num13(h.fear, 0), 0, FEAR_MAX);
         g2.lastHunt = num13(h.lastHunt, -9999);
         g2.doomed = !!h.doomed;
         g2.wander = Math.max(0, num13(h.wander, 0));
@@ -15114,7 +16143,7 @@ h4.group {
     return top[rng.int(0, top.length - 1)];
   }
   function spawnHerds(state, ctx, rng) {
-    const S = cloneState(state);
+    const S = cloneState2(state);
     const events = [];
     const taken = [];
     for (const kind of KINDS) {
@@ -15184,7 +16213,7 @@ h4.group {
     else h.wander = 0;
   }
   function herdsNewDay(state, ctx, rng) {
-    const S = cloneState(state);
+    const S = cloneState2(state);
     const events = [], reasons = [];
     if (S.day === ctx.day) {
       return { state: S, events, reasons, flags: summaryFlags(S, ctx), skipped: true };
@@ -15338,7 +16367,7 @@ h4.group {
     return Math.sqrt(Math.max(1, hunters));
   }
   function huntHerd(state, id, ctx, opts = {}, rng) {
-    const S = cloneState(state);
+    const S = cloneState2(state);
     const events = [], reasons = [];
     const h = S.herds.find((g2) => g2.id === id);
     if (!h) {
@@ -15448,7 +16477,7 @@ h4.group {
   function homeDist(h, ctx) {
     return Math.hypot(h.cx - ctx.homeX, h.cy - ctx.homeY);
   }
-  function cloneState(state) {
+  function cloneState2(state) {
     const s = state && typeof state === "object" ? state : createHerds();
     return {
       v: 1,
@@ -15461,7 +16490,7 @@ h4.group {
       lastSaid: { ...s.lastSaid || {} }
     };
   }
-  function clamp13(v, lo, hi) {
+  function clamp14(v, lo, hi) {
     return v < lo ? lo : v > hi ? hi : v;
   }
   function clampInt(v, lo, hi) {
@@ -15530,6 +16559,7 @@ h4.group {
     applyGhost(sim2);
     applyNeighborLinks(sim2);
     applyTerritoryLinks(sim2);
+    applyDynastyLinks(sim2);
     applyIntelLinks(sim2);
     const warOut = applyWarLinks(sim2);
     applyHerds(sim2);
@@ -15616,7 +16646,7 @@ h4.group {
   }
   function systemsHappyMod(sim2) {
     if (!sim2.sys) return 0;
-    return happyMod(sim2.sys.winter) + industryHappyMod(sim2) + politicsHappyMod(sim2) + (sim2.sys.ecoLinks ? sim2.sys.ecoLinks.mods.happy : 0) + survivalHappyMod(sim2) + industryLinkHappyMod(sim2) + (sim2.sys.nbrLinks ? sim2.sys.nbrLinks.mods.happy : 0) + memoryHappyMod(sim2) + territoryHappyMod(sim2) + (sim2.sys.warLinks ? sim2.sys.warLinks.mods.happy : 0);
+    return happyMod(sim2.sys.winter) + industryHappyMod(sim2) + politicsHappyMod(sim2) + (sim2.sys.ecoLinks ? sim2.sys.ecoLinks.mods.happy : 0) + survivalHappyMod(sim2) + industryLinkHappyMod(sim2) + (sim2.sys.nbrLinks ? sim2.sys.nbrLinks.mods.happy : 0) + memoryHappyMod(sim2) + territoryHappyMod(sim2) + (sim2.sys.warLinks ? sim2.sys.warLinks.mods.happy : 0) + dynastyHappyMod(sim2);
   }
   function systemsPopCapMod(sim2) {
     return sim2.linkTerritory ? territoryPopCap(sim2) : 0;
@@ -15647,7 +16677,8 @@ h4.group {
       masters: sim2.linkMasters || null,
       ghost: sim2.linkGhost || null,
       herds: serializeHerds(sim2.herds),
-      build: serializeBuild(sim2.build)
+      build: serializeBuild(sim2.build),
+      dyn: serializeDynasty(sim2)
     };
   }
   function systemsRestore(sim2, data) {
@@ -15670,6 +16701,7 @@ h4.group {
     sim2.linkGhost = restoreGhost(data.ghost);
     sim2.herds = restoreHerds(data.herds);
     sim2.build = restoreBuild(data.build);
+    if (data.dyn) restoreDynasty(sim2, data.dyn);
   }
   function applyEconomyLinks(sim2) {
     if (!sim2.politics || !sim2.industry) return null;
@@ -15972,6 +17004,36 @@ h4.group {
     for (const e of out.events) sim2.addLog(e.text, e.type);
     return out;
   }
+  function applyDynastyLinks(sim2) {
+    if (!sim2.linkDynasty) sim2.linkDynasty = dynastyInstall(sim2);
+    const rep = dynastyNewDay(sim2);
+    sim2.linkDynasty = rep.flags.state;
+    sim2.sys.dynLinks = rep;
+    if (rep.mods.stab !== 0 && sim2.politics && sim2.politics.state) {
+      const pst = sim2.politics.state;
+      pst.stability = Math.max(0, Math.min(100, pst.stability + rep.mods.stab));
+    }
+    if (rep.flags.courtGold > 0) {
+      sim2.res.gold = Math.max(0, sim2.res.gold - rep.flags.courtGold);
+    }
+    if (rep.flags.newRuler && sim2.politics && sim2.politics.state) {
+      const pst = sim2.politics.state;
+      pst.ruler = {
+        name: rep.flags.newRuler.name,
+        age: rep.flags.newRuler.ageYears,
+        since: sim2.day,
+        traits: rep.flags.newRuler.traits
+      };
+      pst.rulersCount = Math.max(1, (pst.rulersCount || 1) + 1);
+      sim2.addChronicle(`Власть у рода ${sim2.linkDynasty.house ? sim2.linkDynasty.house.name : ""}: правитель ${rep.flags.newRuler.name}.`);
+    }
+    for (const r of rep.reasons) sim2.addLog(r);
+    for (const e of rep.events) {
+      sim2.addLog(e.text, e.type === "good" ? "good" : e.type);
+      if (e.chronicle) sim2.addChronicle(e.text);
+    }
+    return rep;
+  }
   function applySurvivalLinks(sim2) {
     if (!sim2.linkSurvival) sim2.linkSurvival = createSurvivalMemory();
     const out = survivalLinks(sim2);
@@ -16014,7 +17076,8 @@ h4.group {
     industry: { render: renderIndustryPanel, bind: bindIndustryPanel },
     war: { render: renderPanel, bind: bindPanel },
     politics: { render: renderPoliticsPanel, bind: bindPoliticsPanel },
-    empire: { render: renderEmpirePanel, bind: bindEmpirePanel }
+    empire: { render: renderEmpirePanel, bind: bindEmpirePanel },
+    dynasty: { render: renderDynastyPanel, bind: bindDynastyPanel }
   };
 
   // app/src/core/simulation.js
@@ -17763,12 +18826,12 @@ ${s}`, "console");
           case "astar": {
             if (args[0] === "test") {
               const t0 = performance.now();
-              let ok = 0;
+              let ok2 = 0;
               for (let i = 0; i < 50; i++) {
                 const p = aStar(this.world, this.world.startX, this.world.startY, this.rng.int(5, 90), this.rng.int(5, 90));
-                if (p) ok++;
+                if (p) ok2++;
               }
-              say(`A*: ${ok}/50 путей за ${(performance.now() - t0).toFixed(1)} мс`);
+              say(`A*: ${ok2}/50 путей за ${(performance.now() - t0).toFixed(1)} мс`);
             } else say("astar test");
             break;
           }
@@ -18090,12 +19153,12 @@ ${s}`, "console");
     WETLAND: 9,
     ALPINE: 10
   };
-  var clamp14 = (v, a, b) => v < a ? a : v > b ? b : v;
+  var clamp15 = (v, a, b) => v < a ? a : v > b ? b : v;
   function temperature(lat, rel, n) {
-    return clamp14(1 - Math.pow(lat, 1.35) + n * 0.09 - rel * 0.3, 0, 1);
+    return clamp15(1 - Math.pow(lat, 1.35) + n * 0.09 - rel * 0.3, 0, 1);
   }
   function moisture(distSea, n) {
-    return clamp14(0.74 - Math.min(distSea, 18) * 0.03 + n * 0.45, 0, 1);
+    return clamp15(0.74 - Math.min(distSea, 18) * 0.03 + n * 0.45, 0, 1);
   }
 
   // app/src/render/landmarks.js
@@ -18178,7 +19241,7 @@ ${s}`, "console");
     dirt: "#7a6242"
     // вытоптанная земля вокруг
   };
-  var clamp15 = (v, a, b) => v < a ? a : v > b ? b : v;
+  var clamp16 = (v, a, b) => v < a ? a : v > b ? b : v;
   var c255 = (v) => v < 0 ? 0 : v > 255 ? 255 : v | 0;
   function mul(hex, k) {
     const c = hex2rgb(hex);
@@ -18540,12 +19603,12 @@ ${s}`, "console");
         const tries = [{ x: b.x, y: b.y }, ...b.alt];
         let placed = null;
         for (const p of tries) {
-          let ok = true;
+          let ok2 = true;
           for (const o of out) if (Math.hypot(o.x - p.x, o.y - p.y) < sep) {
-            ok = false;
+            ok2 = false;
             break;
           }
-          if (ok) {
+          if (ok2) {
             placed = p;
             break;
           }
@@ -18606,7 +19669,7 @@ ${s}`, "console");
       const sp = Math.max(1e-4, hi - lo);
       for (let i = 0; i < N; i++) hgt[i] = (world.elev[i] - lo) / sp;
     } else if (height && height.length === N) {
-      for (let i = 0; i < N; i++) hgt[i] = clamp15((height[i] + 0.6) / 1.95, 0, 1);
+      for (let i = 0; i < N; i++) hgt[i] = clamp16((height[i] + 0.6) / 1.95, 0, 1);
     } else {
       for (let i = 0; i < N; i++) hgt[i] = H_BY_TILE[tiles[i]] ?? 0.2;
     }
@@ -18633,7 +19696,7 @@ ${s}`, "console");
           const i = y * W + x;
           const n1 = h3(x * 5, y * 5, 401) * 2 - 1;
           const n2 = h3(x * 3, y * 7, 909) * 2 - 1;
-          const rel = clamp15(hgt[i] - 0.2, 0, 1);
+          const rel = clamp16(hgt[i] - 0.2, 0, 1);
           const t = temperature(lat, rel, n1);
           const m = moisture(dsea[i], n2);
           biome[i] = classify(tiles[i], t, m, rel, river ? river[i] : 0, dsea[i]);
@@ -18664,8 +19727,8 @@ ${s}`, "console");
   }
   function count(f, name, x, y, r) {
     const W1 = f.W + 1;
-    const x0 = clamp15(x - r, 0, f.W), x1 = clamp15(x + r + 1, 0, f.W);
-    const y0 = clamp15(y - r, 0, f.H), y1 = clamp15(y + r + 1, 0, f.H);
+    const x0 = clamp16(x - r, 0, f.W), x1 = clamp16(x + r + 1, 0, f.W);
+    const y0 = clamp16(y - r, 0, f.H), y1 = clamp16(y + r + 1, 0, f.H);
     const T2 = f.sums[name];
     return T2[y1 * W1 + x1] - T2[y0 * W1 + x1] - T2[y1 * W1 + x0] + T2[y0 * W1 + x0];
   }
@@ -18745,7 +19808,7 @@ ${s}`, "console");
       if (f.slope[i] > 0.03) return 0;
       let around = 0, n = 0;
       for (let dy = -4; dy <= 4; dy += 2) for (let dx = -4; dx <= 4; dx += 2) {
-        const xx = clamp15(x + dx, 0, f.W - 1), yy = clamp15(y + dy, 0, f.H - 1);
+        const xx = clamp16(x + dx, 0, f.W - 1), yy = clamp16(y + dy, 0, f.H - 1);
         around += f.hgt[yy * f.W + xx];
         n++;
       }
@@ -23973,9 +25036,9 @@ ${s}`, "console");
   function supportsOp(ctx, op) {
     const prev = ctx.globalCompositeOperation;
     ctx.globalCompositeOperation = op;
-    const ok = ctx.globalCompositeOperation === op;
+    const ok2 = ctx.globalCompositeOperation === op;
     ctx.globalCompositeOperation = prev;
-    return ok;
+    return ok2;
   }
   function kindOf(sim2) {
     if (sim2.weather === "rain") return "rain";
@@ -25583,7 +26646,7 @@ ${s}`, "console");
   var UNDER_FLEX = [0.45, 0.55, 1.3, 0.75, 1, 0, 0, 0.85, 0];
   var KIND_TREE = 0;
   var KIND_UNDER = 1;
-  var clamp16 = (v, a, b) => v < a ? a : v > b ? b : v;
+  var clamp17 = (v, a, b) => v < a ? a : v > b ? b : v;
   var clamp013 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
   function makeRnd3(seed) {
     let s = seed | 0 || 625341585;
@@ -26420,7 +27483,7 @@ ${s}`, "console");
       this.ph = Math.ceil(H / S);
       const g2 = new Float32Array(this.pw * this.ph);
       const eraMul = [0.3, 0.42, 0.58, 0.7, 0.82, 0.92, 1, 0.98, 0.66, 0.4];
-      const em = eraMul[clamp16(sim2.eraIndex | 0, 0, 9)];
+      const em = eraMul[clamp17(sim2.eraIndex | 0, 0, 9)];
       const weightOf2 = (id) => {
         if (id === "lumber") return 1.25;
         if (id === "farm" || id === "pasture") return 0.85;
@@ -26457,7 +27520,7 @@ ${s}`, "console");
     }
     pressureAt(x, y) {
       if (!this.press) return 0;
-      const gx = clamp16(x >> 2, 0, this.pw - 1), gy = clamp16(y >> 2, 0, this.ph - 1);
+      const gx = clamp17(x >> 2, 0, this.pw - 1), gy = clamp17(y >> 2, 0, this.ph - 1);
       return clamp013(this.press[gy * this.pw + gx] + (noise2(x * 0.3, y * 0.3) - 0.5) * 0.22);
     }
     // =========================================================================
@@ -26476,7 +27539,7 @@ ${s}`, "console");
     }
     buildChunk(sim2, cx, cy) {
       const world = sim2.world, W = world.w, H = world.h;
-      const season = sim2.seasonIdx | 0, era = clamp16(sim2.eraIndex | 0, 0, 9);
+      const season = sim2.seasonIdx | 0, era = clamp17(sim2.eraIndex | 0, 0, 9);
       const D = this.q.detail;
       const items = [];
       const tile = (x, y) => x < 0 || y < 0 || x >= W || y >= H ? TILE.DEEP : world.tiles[y * W + x];
@@ -26707,7 +27770,7 @@ ${s}`, "console");
       if (!total) return;
       const cut = total > cap ? cap / total : 1;
       const stormK = sim2.weather === "storm" ? 1.7 : sim2.weather === "rain" ? 1.15 : 1;
-      const amp = (0.03 + 0.085 * Math.abs(this.wind)) * clamp16(this.gust, 0.2, 1.2) * stormK;
+      const amp = (0.03 + 0.085 * Math.abs(this.wind)) * clamp17(this.gust, 0.2, 1.2) * stormK;
       const dir = this.wind < 0 ? -1 : 1;
       const t = this.time;
       const m = typeof ctx.getTransform === "function" ? ctx.getTransform() : null;
@@ -26862,7 +27925,7 @@ ${s}`, "console");
   };
   var ISO_MAX_PX = 23;
   var ISO_FULL_PX = 13;
-  var clamp17 = (v, a, b) => v < a ? a : v > b ? b : v;
+  var clamp18 = (v, a, b) => v < a ? a : v > b ? b : v;
   var sstep2 = (a, b, x) => {
     const t = (x - a) / (b - a);
     return t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
@@ -27199,7 +28262,7 @@ ${s}`, "console");
       let top = 1e-3;
       for (let i = 0; i < N; i++) if (landK[i] > 0 && smooth3[i] > top) top = smooth3[i];
       for (let i = 0; i < N; i++) smooth3[i] /= top;
-      const R = clamp17(Math.round(Math.min(w, h) / 11), 3, 18);
+      const R = clamp18(Math.round(Math.min(w, h) / 11), 3, 18);
       const low = _ReliefLayer.boxBlur(Float32Array.from(smooth3), w, h, R, 2);
       const landSoft = _ReliefLayer.blur(Float32Array.from(landK), w, h, 1, null);
       const slopeT = new Float32Array(N);
@@ -27216,10 +28279,10 @@ ${s}`, "console");
       const lands = new Float32Array(nLand);
       for (let i = 0, k = 0; i < N; i++) if (landK[i] > 0) lands[k++] = slopeT[i];
       lands.sort();
-      const qAt = (q) => nLand ? lands[clamp17(Math.floor(q * (nLand - 1)), 0, nLand - 1)] : 0;
-      const c0 = clamp17(qAt(TUNE.cliffQ), TUNE.cliffMin, TUNE.cliffMax);
+      const qAt = (q) => nLand ? lands[clamp18(Math.floor(q * (nLand - 1)), 0, nLand - 1)] : 0;
+      const c0 = clamp18(qAt(TUNE.cliffQ), TUNE.cliffMin, TUNE.cliffMax);
       this.cliff0 = c0;
-      this.cliff1 = clamp17(Math.max(qAt(TUNE.cliffQFull), c0 * 1.7), c0 * 1.4, TUNE.cliffFull);
+      this.cliff1 = clamp18(Math.max(qAt(TUNE.cliffQFull), c0 * 1.7), c0 * 1.4, TUNE.cliffFull);
       const lapsArr = new Float32Array(nLand);
       for (let y = 0, k = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
@@ -27231,8 +28294,8 @@ ${s}`, "console");
         }
       }
       lapsArr.sort();
-      this.lapScale = clamp17(
-        nLand ? lapsArr[clamp17(Math.floor(TUNE.lapQ * (nLand - 1)), 0, nLand - 1)] : TUNE.lapMin,
+      this.lapScale = clamp18(
+        nLand ? lapsArr[clamp18(Math.floor(TUNE.lapQ * (nLand - 1)), 0, nLand - 1)] : TUNE.lapMin,
         TUNE.lapMin,
         TUNE.lapMax
       );
@@ -27243,8 +28306,8 @@ ${s}`, "console");
       this.txF = new Float32Array(SW);
       for (let sx = 0; sx < SW; sx++) {
         const u = (sx + 0.5) / S - 0.5, i0 = Math.floor(u);
-        this.txA[sx] = clamp17(i0, 0, w - 1);
-        this.txB[sx] = clamp17(i0 + 1, 0, w - 1);
+        this.txA[sx] = clamp18(i0, 0, w - 1);
+        this.txB[sx] = clamp18(i0 + 1, 0, w - 1);
         this.txF[sx] = u - i0;
       }
       const rowTmp = new Float32Array(SW * h);
@@ -27252,8 +28315,8 @@ ${s}`, "console");
         const row = y * w, out = y * SW;
         for (let sx = 0; sx < SW; sx++) {
           const i0 = tx.idx[sx], o = sx * 4;
-          const a = row + clamp17(i0 - 1, 0, w - 1), b = row + clamp17(i0, 0, w - 1);
-          const c = row + clamp17(i0 + 1, 0, w - 1), d = row + clamp17(i0 + 2, 0, w - 1);
+          const a = row + clamp18(i0 - 1, 0, w - 1), b = row + clamp18(i0, 0, w - 1);
+          const c = row + clamp18(i0 + 1, 0, w - 1), d = row + clamp18(i0 + 2, 0, w - 1);
           rowTmp[out + sx] = smooth3[a] * tx.wt[o] + smooth3[b] * tx.wt[o + 1] + smooth3[c] * tx.wt[o + 2] + smooth3[d] * tx.wt[o + 3];
         }
       }
@@ -27294,12 +28357,12 @@ ${s}`, "console");
       const end = Math.min(this.SH, upTo);
       for (let sy = this.Hrows; sy < end; sy++) {
         const j0 = ty.idx[sy], o = sy * 4;
-        const ra = clamp17(j0 - 1, 0, h - 1) * SW, rb = clamp17(j0, 0, h - 1) * SW;
-        const rc = clamp17(j0 + 1, 0, h - 1) * SW, rd = clamp17(j0 + 2, 0, h - 1) * SW;
+        const ra = clamp18(j0 - 1, 0, h - 1) * SW, rb = clamp18(j0, 0, h - 1) * SW;
+        const rc = clamp18(j0 + 1, 0, h - 1) * SW, rd = clamp18(j0 + 2, 0, h - 1) * SW;
         const out = sy * SW;
         const wy = sy * invS;
         const uy = (sy + 0.5) * invS - 0.5, jy = Math.floor(uy), fy = uy - jy;
-        const jA = clamp17(jy, 0, h - 1) * w, jB = clamp17(jy + 1, 0, h - 1) * w;
+        const jA = clamp18(jy, 0, h - 1) * w, jB = clamp18(jy + 1, 0, h - 1) * w;
         const txA = this.txA, txB = this.txB, txF = this.txF;
         for (let sx = 0; sx < SW; sx++) {
           let v = rowTmp[ra + sx] * ty.wt[o] + rowTmp[rb + sx] * ty.wt[o + 1] + rowTmp[rc + sx] * ty.wt[o + 2] + rowTmp[rd + sx] * ty.wt[o + 3];
@@ -27349,9 +28412,9 @@ ${s}`, "console");
         const lat = Math.abs((y + 0.5) / h * 2 - 1);
         for (let x = 0; x < w; x++) {
           const i = y * w + x;
-          const warm = temp ? clamp17(temp[i] + 0.3 * Math.max(0, Ht[i]), 0, 1) : clamp17(1 - Math.pow(lat, 1.35), 0, 1);
+          const warm = temp ? clamp18(temp[i] + 0.3 * Math.max(0, Ht[i]), 0, 1) : clamp18(1 - Math.pow(lat, 1.35), 0, 1);
           const n = ntAt(g2, x * 0.42 + oC, y * 0.42 + oC) - 0.5;
-          line[i] = clamp17(base * (0.49 + warm * 0.47) + n * 0.07, 0.05, 2);
+          line[i] = clamp18(base * (0.49 + warm * 0.47) + n * 0.07, 0.05, 2);
         }
       }
       this.snowH = line;
@@ -27464,7 +28527,7 @@ ${s}`, "console");
       const rowDnD = Math.min(SH - 1, sy + D) * SW;
       const wy = sy * invS;
       const uy = (sy + 0.5) * invS - 0.5, j0 = Math.floor(uy), fy = uy - j0;
-      const jA = clamp17(j0, 0, h - 1) * w, jB = clamp17(j0 + 1, 0, h - 1) * w;
+      const jA = clamp18(j0, 0, h - 1) * w, jB = clamp18(j0 + 1, 0, h - 1) * w;
       const txA = this.txA, txB = this.txB, txF = this.txF;
       let iA = 0, iB = 0, fx = 0;
       const bil = (arr) => {
@@ -27507,7 +28570,7 @@ ${s}`, "console");
         v += asp * T2.aspect;
         const cliff = sstep2(C0, C1, slopeW);
         if (cliff > 0.25) CNT.cliff++;
-        if (!simple) v -= clamp17(lap * T2.ledgeN, -0.9, 0.9) * (0.35 + 0.65 * cliff);
+        if (!simple) v -= clamp18(lap * T2.ledgeN, -0.9, 0.9) * (0.35 + 0.65 * cliff);
         cr = 0;
         cg = 0;
         cb = 0;
@@ -27529,7 +28592,7 @@ ${s}`, "console");
           over(T2.rockRGB[0], T2.rockRGB[1], T2.rockRGB[2], rockK * 0.55);
         }
         if (!simple && detail >= 1) {
-          const foot = clamp17(lap * T2.screeCurv, 0, 1) * sstep2(0.1, 0.24, hC) * sstep2(C0 * 0.38, C0 * 1.1, slopeW) * (1 - sstep2(C0 * 1.55, C1 * 1.15, slopeW));
+          const foot = clamp18(lap * T2.screeCurv, 0, 1) * sstep2(0.1, 0.24, hC) * sstep2(C0 * 0.38, C0 * 1.1, slopeW) * (1 - sstep2(C0 * 1.55, C1 * 1.15, slopeW));
           if (foot > 0.02) {
             if (foot > 0.15) CNT.scree++;
             const gc = Math.max(1, S / 3);
@@ -27605,28 +28668,28 @@ ${s}`, "console");
       if (!busy && this.job) this.step(this.job.first ? RELIEF_BUDGET.first : RELIEF_BUDGET.rebake);
       if (!this.base) return;
       const S = this.S, w = this.w, h = this.h;
-      const x0 = clamp17(Math.floor(-ox / z) - 1, 0, w);
-      const x1 = clamp17(Math.ceil((cw - ox) / z) + 1, 0, w);
-      const y0 = clamp17(Math.floor(-oy / z) - 1, 0, h);
-      const y1 = clamp17(Math.ceil((ch - oy) / z) + 1, 0, h);
+      const x0 = clamp18(Math.floor(-ox / z) - 1, 0, w);
+      const x1 = clamp18(Math.ceil((cw - ox) / z) + 1, 0, w);
+      const y0 = clamp18(Math.floor(-oy / z) - 1, 0, h);
+      const y1 = clamp18(Math.ceil((ch - oy) / z) + 1, 0, h);
       if (x1 <= x0 || y1 <= y0) return;
       const sx = x0 * S, sy = y0 * S, sw = (x1 - x0) * S, sh = (y1 - y0) * S;
       const dx = ox + x0 * z, dy = oy + y0 * z;
       const dw = (x1 - x0) * z, dh = (y1 - y0) * z;
       let k = 1;
       if (L && typeof L.mul === "number") {
-        const sun = clamp17((L.mul - 0.42) / 0.58, 0, 1);
-        k = clamp17(0.52 + sun * 0.5 + Math.sin(Math.PI * sun) * 0.3, 0.45, 1.16);
+        const sun = clamp18((L.mul - 0.42) / 0.58, 0, 1);
+        k = clamp18(0.52 + sun * 0.5 + Math.sin(Math.PI * sun) * 0.3, 0.45, 1.16);
       }
       ctx.save();
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "low";
-      ctx.globalAlpha = clamp17(0.72 + 0.28 * k, 0, 1);
+      ctx.globalAlpha = clamp18(0.72 + 0.28 * k, 0, 1);
       ctx.drawImage(this.base, sx, sy, sw, sh, dx, dy, dw, dh);
       this.drawn++;
       if (this.lite) {
         ctx.globalCompositeOperation = "lighter";
-        ctx.globalAlpha = clamp17(k, 0, 1);
+        ctx.globalAlpha = clamp18(k, 0, 1);
         ctx.drawImage(this.lite, sx, sy, sw, sh, dx, dy, dw, dh);
         ctx.globalCompositeOperation = "source-over";
         this.drawn++;
@@ -27748,7 +28811,7 @@ ${s}`, "console");
   var SELF_MIN_ZOOM = 0.75;
   var PAD = 0.055;
   var SPREAD_PAD = 0.45;
-  var clamp18 = (v, a, b) => v < a ? a : v > b ? b : v;
+  var clamp19 = (v, a, b) => v < a ? a : v > b ? b : v;
   var clamp014 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
   var smooth2 = (k) => k * k * (3 - 2 * k);
   var FALLBACK_Q = {
@@ -27769,9 +28832,9 @@ ${s}`, "console");
   function supportsOp2(ctx, op) {
     const prev = ctx.globalCompositeOperation;
     ctx.globalCompositeOperation = op;
-    const ok = ctx.globalCompositeOperation === op;
+    const ok2 = ctx.globalCompositeOperation === op;
     ctx.globalCompositeOperation = prev;
-    return ok;
+    return ok2;
   }
   function makeCanvas(w, h) {
     const cv = document.createElement("canvas");
@@ -27924,8 +28987,8 @@ ${s}`, "console");
       const L = lightAt(t);
       const W = WEATHER_SHADOW[sim2.weather] || WEATHER_DEFAULT;
       const fog = opts && typeof opts.fog === "number" ? clamp014(opts.fog) : 0;
-      const len = clamp18(L.shadowLen, 0.45, 2.2);
-      const u = clamp18((t - 0.5) / ((DAY_B - DAY_A) / 2), -1, 1);
+      const len = clamp19(L.shadowLen, 0.45, 2.2);
+      const u = clamp19((t - 0.5) / ((DAY_B - DAY_A) / 2), -1, 1);
       const sun = sunAt(t) * W.a * (1 - 0.75 * fog);
       const dim = Math.min(1, 1.15 / (0.55 + 0.62 * len));
       const target = {
@@ -27985,7 +29048,7 @@ ${s}`, "console");
       const hf = spr.hFact || 0;
       if (hf < SELF_MIN_H) return;
       if (this.selfs >= this.maxSelf) return;
-      const band = clamp18(0.78 / hf, 0.32, 0.6);
+      const band = clamp19(0.78 / hf, 0.32, 0.6);
       const a = this._selfOf(spr.sil, dw, dh, band);
       if (!a) return;
       const mul2 = this._checkMul(ctx);
@@ -28091,8 +29154,8 @@ ${s}`, "console");
         this._self = /* @__PURE__ */ new WeakMap();
         this._bytes = 0;
       }
-      const w = clamp18(Math.round(dw), 12, 256);
-      const h = clamp18(Math.round(dh), 12, 384);
+      const w = clamp19(Math.round(dw), 12, 256);
+      const h = clamp19(Math.round(dh), 12, 384);
       s = bakeSoft(src, w, h, 1);
       this._bytes += s.bytes;
       this._soft.set(src, s);
@@ -28102,8 +29165,8 @@ ${s}`, "console");
       if (!src) return null;
       let s = this._self.get(src);
       if (s) return s;
-      const w = clamp18(Math.round(dw), 12, 256);
-      const h = clamp18(Math.round(dh), 12, 384);
+      const w = clamp19(Math.round(dw), 12, 256);
+      const h = clamp19(Math.round(dh), 12, 384);
       s = bakeSelfShade(src, w, h, band);
       this._bytes += s.bytes;
       this._self.set(src, s);
@@ -28264,7 +29327,7 @@ ${s}`, "console");
     first_frost: "vaporpuff",
     cold: "vaporpuff"
   };
-  var clamp19 = (v, a, b) => v < a ? a : v > b ? b : v;
+  var clamp20 = (v, a, b) => v < a ? a : v > b ? b : v;
   var clamp015 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
   function makeRnd5(seed) {
     let s = seed | 0 || 1831565813;
@@ -28482,8 +29545,8 @@ ${s}`, "console");
       if ((this.resCd[resId] || 0) > 0) return false;
       this.resCd[resId] = 0.8;
       const p = this._anchor(sim2, resId);
-      const sign3 = v > 0 ? "+" : "−";
-      return this.number(p.x, p.y, `${sign3}${Math.abs(v)}${RES_ICON2[resId] || ""}`, v > 0 ? "good" : "bad", Math.abs(v) >= 60);
+      const sign4 = v > 0 ? "+" : "−";
+      return this.number(p.x, p.y, `${sign4}${Math.abs(v)}${RES_ICON2[resId] || ""}`, v > 0 ? "good" : "bad", Math.abs(v) >= 60);
     }
     // Разыграть визуал события по его определению из EVENT_DEFS (или по id).
     // Вызывается автоматически из update() по журналу, но доступно и снаружи.
@@ -28780,7 +29843,7 @@ ${s}`, "console");
     _tickMeteor(e, dt, dens) {
       if (this.night < 0.18) return;
       if (!this.cw) return;
-      e.acc += (e.d.rate || 2.2) * dt * clamp19(dens, 0.4, 1);
+      e.acc += (e.d.rate || 2.2) * dt * clamp20(dens, 0.4, 1);
       while (e.acc >= 1) {
         e.acc--;
         const m = take(this.meteors);
@@ -28882,7 +29945,7 @@ ${s}`, "console");
       this.forges.length = 0;
       const list = sim2.buildings;
       if (!Array.isArray(list)) return;
-      const crowd = clamp19(10 / Math.max(1, this._smokers || 1), 0.4, 1);
+      const crowd = clamp20(10 / Math.max(1, this._smokers || 1), 0.4, 1);
       const dens = this._density();
       const workSmoke = dens > 0 && !this.off;
       let smokers = 0;
@@ -29255,7 +30318,7 @@ ${s}`, "console");
         const rise = l.rise * (1 - (1 - k) * (1 - k));
         const sx = ox + l.x * z, sy = oy + (l.y - rise) * z;
         if (sx < -80 || sy < -40 || sx > cw + 80 || sy > ch + 40) continue;
-        const px = Math.round(clamp19(z * (l.big ? 0.55 : 0.42), l.big ? 14 : 11, l.big ? 34 : 24));
+        const px = Math.round(clamp20(z * (l.big ? 0.55 : 0.42), l.big ? 14 : 11, l.big ? 34 : 24));
         ctx.font = `bold ${px}px system-ui, "Segoe UI", sans-serif`;
         ctx.globalAlpha = k < 0.1 ? k / 0.1 : k > 0.6 ? (1 - k) / 0.4 : 1;
         ctx.lineWidth = Math.max(2, px * 0.22);
@@ -29339,7 +30402,7 @@ ${s}`, "console");
     _seedStars() {
       const p = this.stars;
       p.n = 0;
-      const want = Math.round(FX_LIMITS.star * clamp19(this._density(), 0.3, 1));
+      const want = Math.round(FX_LIMITS.star * clamp20(this._density(), 0.3, 1));
       for (let i = 0; i < want; i++) {
         const s = take(p);
         if (!s) break;
@@ -32196,7 +33259,7 @@ ${s}`, "console");
     const t = q.trend;
     const arrow = t.dir > 0 ? "▲" : t.dir < 0 ? "▼" : "=";
     const col = t.dir > 0 ? "var(--good)" : t.dir < 0 ? "var(--bad)" : "var(--warn)";
-    const sign3 = t.pct > 0 ? "+" : "";
+    const sign4 = t.pct > 0 ? "+" : "";
     const width = Math.max(0, Math.min(100, (t.ratio - 0.5) / 1.5 * 100));
     const recent = t.days ? ` · за ${t.days} дн. ${t.recent > 0 ? "дорожает" : t.recent < 0 ? "дешевеет" : "стоит"}` : "";
     const stock = isFinite(q.cap) ? `${q.have}/${q.cap}` : `${q.have}`;
@@ -32216,7 +33279,7 @@ ${s}`, "console");
     if (!big.canSell) why.push(`продать ${big.n}: в запасе ${q.have}`);
     if (!big.canBuy) why.push(`купить ${big.n}: ${big.buyWhy}`);
     return `<div class="card"><div class="ttl"><span>${q.icon} ${q.ru}</span>
-      <span class="cost" style="color:${col}">${_rate(q.rate)}🪙 ${arrow} ${sign3}${t.pct}% к базе</span></div>
+      <span class="cost" style="color:${col}">${_rate(q.rate)}🪙 ${arrow} ${sign4}${t.pct}% к базе</span></div>
     <div class="desc">В запасе ${stock} · продажа ${_rate(q.rate)}🪙 · покупка ${_rate(q.buyRate)}🪙${recent}</div>
     <div class="relbar"><div style="width:${width.toFixed(0)}%;background:${col}"></div></div>
     ${btns}
@@ -32318,6 +33381,8 @@ ${s}`, "console");
     { id: "war", ru: "Война", ic: "🛡" },
     { id: "politics", ru: "Держава", ic: "⚖" },
     { id: "empire", ru: "Города", ic: "🏛" },
+    // Род при троне: династия, наследники и законность — решения игрока про власть.
+    { id: "dynasty", ru: "Род", ic: "👑" },
     { id: "labor", ru: "Труд", ic: "👷" },
     { id: "goals", ru: "Цели", ic: "🎯" },
     // Летопись — не архив, а действующая механика: что народ помнит, тем и
@@ -33299,6 +34364,9 @@ ${out}`;
     }
     panel_empire() {
       return PANELS.empire.render(this.sim);
+    }
+    panel_dynasty() {
+      return renderDynastyPanel(this.sim);
     }
     panel_memory() {
       const s = this.sim;
@@ -34290,7 +35358,7 @@ ${out}`;
       if (t.rect) return t;
       return null;
     }
-    renderCard(step, ok) {
+    renderCard(step, ok2) {
       const idx = STEPS2.indexOf(step) + 1;
       let text = typeof step.text === "function" ? this.safe(() => step.text(this), "") : step.text;
       if (step.build && this.sim.placing) {
@@ -34301,19 +35369,19 @@ ${out}`;
       const card = this._el.card;
       const html = `<div class="c-head"><span class="c-step">Шаг ${idx} из ${STEPS2.length}</span>
         <button class="c-skip">Пропустить обучение</button></div>
-      <div class="c-title">${ok ? "✓ Готово" : step.title}</div>
-      <div class="c-text">${ok ? "Отлично. Дальше." : text}</div>
-      ${!ok && note ? `<div class="c-note">${note}</div>` : ""}
+      <div class="c-title">${ok2 ? "✓ Готово" : step.title}</div>
+      <div class="c-text">${ok2 ? "Отлично. Дальше." : text}</div>
+      ${!ok2 && note ? `<div class="c-note">${note}</div>` : ""}
       <div class="c-dots">${dots}</div>`;
       if (html !== this._html) {
         this._html = html;
         card.innerHTML = html;
         card.querySelector(".c-skip").onclick = () => this.skip();
       }
-      card.classList.toggle("ok", !!ok);
+      card.classList.toggle("ok", !!ok2);
     }
     // ---------- позиционирование ----------
-    place(target, ok, withCard = true) {
+    place(target, ok2, withCard = true) {
       const { ring, card } = this._el;
       if (modalOpen() && !this.step?.overModal) {
         this.hide();
@@ -34327,7 +35395,7 @@ ${out}`;
       }
       const r = target.rect;
       ring.classList.add("show");
-      ring.classList.toggle("done", !!ok);
+      ring.classList.toggle("done", !!ok2);
       ring.style.left = Math.round(r.left - 4) + "px";
       ring.style.top = Math.round(r.top - 4) + "px";
       ring.style.width = Math.round(r.width + 8) + "px";
@@ -35338,8 +36406,8 @@ ${out}`;
     confirmPlace,
     cancelPlace,
     save(slot) {
-      const ok = saveSys.save(slot, JSON.stringify(sim.serialize()));
-      hud.toast(ok ? `Сохранено: ${slot}` : "Не удалось сохранить", ok ? "good" : "bad");
+      const ok2 = saveSys.save(slot, JSON.stringify(sim.serialize()));
+      hud.toast(ok2 ? `Сохранено: ${slot}` : "Не удалось сохранить", ok2 ? "good" : "bad");
     },
     load(slot) {
       const json = saveSys.load(slot);
