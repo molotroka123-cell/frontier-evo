@@ -113,6 +113,24 @@ export const WAR_UTILITY = 0.35;
 export const PLAYER_WAR_UTILITY = 0.5;
 
 const BUILDING_IDS = Object.keys(BUILDINGS);
+
+// ---------- Архетипы и наука ----------
+// БЫЛО: наука соседа определялась только линейной чертой (tr.science/5) и
+// бонусами data.js — к дню 3000 все фракции стояли вплотную, в 4–5 эпохах,
+// «уехать вперёд» не мог никто. Стало: дневной вклад в знания умножается на
+// архетипный множитель — учёные и мирные ускоряются, воинственные платят за
+// меч недостроенными лабораториями. Расхождение эпох со временем растёт само:
+// дорогие эпохальные гейты (printing 1100, steam 1600, ai 5400…) усиливают
+// разницу дохода, поэтому экспонента НЕ нужна. Потолок и пол страхуют от неё
+// явно: множитель зажат константами и от черт зависит лишь линейно.
+export const SCI_ARCH_FLOOR = 0.70; // пол: даже орда не каменный век навсегда
+export const SCI_ARCH_CEIL = 1.60;  // потолок: академия, а не вечный двигатель
+export function scienceArchMult(tr) {
+  const raw = 1
+    + Math.max(0, ((tr && tr.science) || 5) - 5) * 0.07   // учёность ускоряет вклад
+    - Math.max(0, ((tr && tr.aggression) || 5) - 5) * 0.05; // войну кормят за счёт мудрости
+  return Math.min(SCI_ARCH_CEIL, Math.max(SCI_ARCH_FLOOR, raw));
+}
 const TECH_BY_ID = Object.fromEntries(TECHS.map((t, i) => [t.id, { ...t, idx: i }]));
 // Что открывает каждая технология — считается из тех же таблиц, а не
 // переписывается руками: добавят здание в BUILDINGS — ИИ узнает о нём сам.
@@ -287,7 +305,10 @@ function economy(c, f, ctx, out) {
   gain.gold += f.P * 0.03 * (0.5 + tr.trade / 10);
   gain.knowledge += (0.15 * towns + f.P * 0.006) * (tr.science / 5);
 
-  gain.knowledge *= (bn.science || 1) * (pn.science || 1);
+  // Архетипный множитель (см. блок «Архетипы и наука» выше) стоит в той же
+  // строке, что бонусы data.js: он должен усиливать и книжную добычу построек
+  // (костёр историй, академии), а не только базовый промысел знаний.
+  gain.knowledge *= scienceArchMult(tr) * (bn.science || 1) * (pn.science || 1);
   gain.gold *= goldMult * (bn.gold || 1);
   gain.steel *= industry * (bn.steel || 1);
   gain.stone *= industry;
