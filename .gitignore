@@ -12,3 +12,6 @@ Builds/
 ФРОНТИР_передача.zip
 
 frontier-source-*.txt
+
+# Сырьевые текстуры 2.1 ГБ в git не кладём — в бандл идут даунскейлы из art/tex/
+assets/HF Texture/
