@@ -116,6 +116,9 @@ const BUILDING_IDS = Object.keys(BUILDINGS);
 const TECH_BY_ID = Object.fromEntries(TECHS.map((t, i) => [t.id, { ...t, idx: i }]));
 // Что открывает каждая технология — считается из тех же таблиц, а не
 // переписывается руками: добавят здание в BUILDINGS — ИИ узнает о нём сам.
+// Фортификационный кредит течёт назад по пререквизитам: ветка, приводящая
+// к стенам (tools→farming→pottery→bronze→masonry→…), узнаётся целиком,
+// иначе черепаха застрянет перед частоколом на полпути.
 const TECH_UNLOCKS = (() => {
   const map = {};
   for (const t of TECHS) map[t.id] = { army: 0, gold: 0, know: 0, food: 0, units: 0 };
@@ -129,6 +132,23 @@ const TECH_UNLOCKS = (() => {
   }
   for (const u of UNITS) if (map[u.req]) map[u.req].units++;
   return map;
+})();
+// Гражданская ветка кладки: предки masonry без военных технологий. Она и
+// только она удешевляется черепахе — война (warfare) остаётся по полной цене,
+// иначе дешёвые стены превращались бы в дешёвый меч.
+const MASONRY_PATH = (() => {
+  const path = new Set(['masonry']);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const t of TECHS) {
+      if (!path.has(t.id) || t.id === 'warfare') continue;
+      for (const p of t.prereq) {
+        if (p !== 'warfare' && !path.has(p)) { path.add(p); grew = true; }
+      }
+    }
+  }
+  return path;
 })();
 
 // Здания, которые ИИ не строит никогда: это сюжетные объекты игрока.
@@ -298,6 +318,16 @@ function economy(c, f, ctx, out) {
   c._defense = defense;
   c._armyMult = armyMult;
 
+  // д) Безнадёжная страна. Если еды в стране структурно не хватает (дневной
+  // доход меньше расхода — никакая стройка это уже не выправит), а людей на
+  // живое поселение меньше ABANDON_POP, фракция доживает: новые стройки и
+  // колонии замораживаются (тик уже умеет c.despaired), иначе голодающая
+  // деревня успевает отстроить собирателей и кормится «вечный век».
+  if (!c.despaired && c.starveDays > 0 && gain.food < eat && f.P / towns < ABANDON_POP) {
+    c.despaired = true;
+    out.logs.push(`${f.def.name} больше не может прокормить себя: стройки заморожены.`);
+  }
+
   // г) Оптимизация безнадёги. ЧЕСТНОЕ ОГРАНИЧЕНИЕ: в модели нет населения
   // по отдельным поселениям — f.P общий на фракцию, а казна и склады (c.res)
   // и так общие, «перевозить» нечего. Поэтому деревня считается безнадёжной
@@ -333,7 +363,13 @@ function research(c, f, ctx, out) {
   if (!c.research) c.research = chooseTech(c, f);
   if (!c.research) return;
   const t = TECH_BY_ID[c.research];
-  const need = Math.max(10, t.cost * TECH_COST_MULT);
+  let need = Math.max(10, t.cost * TECH_COST_MULT);
+  // Оборонительный народ строит стены по дешёвым чертежам: гражданская ветка
+  // кладки (MASONRY_PATH) обходится ему вдвое дешевле — иначе частокол
+  // остаётся за горизонтом исследований до конца партии. Скидка сходится,
+  // как только стены стоят: дальше экономика науки живёт по полной цене.
+  const walled = c.buildings.palisade || c.buildings.stone_walls || c.buildings.castle;
+  if (!walled && c.tr.defense > 4 && MASONRY_PATH.has(c.research)) need *= 0.3;
   if (c.res.knowledge < need) return;
   c.res.knowledge -= need;
   c.techs.push(t.id);
@@ -351,6 +387,7 @@ function research(c, f, ctx, out) {
 function chooseTech(c, f) {
   const tr = c.tr;
   const known = new Set(c.techs);
+  const walled = c.buildings.palisade || c.buildings.stone_walls || c.buildings.castle;
   let best = null, bestScore = -Infinity;
   for (const t of TECHS) {
     if (known.has(t.id)) continue;
@@ -362,6 +399,10 @@ function chooseTech(c, f) {
     score += u.know * 0.06 * (tr.science / 5);
     score += u.food * 0.05 * (tr.expansion / 5);
     if (t.era) score += 0.12 * (tr.science / 5); // эпохальные ветки тянут вперёд
+    // Черепаха без стен тянет гражданскую ветку кладки вперёд — иначе частокол
+    // остаётся за горизонтом исследований. Первая стена гасит приоритет,
+    // военные технологии (warfare) приоритета не получают вовсе.
+    if (!walled && tr.defense > 4 && MASONRY_PATH.has(t.id)) score += 3;
     if (score > bestScore) { bestScore = score; best = t.id; }
   }
   return best;
@@ -546,8 +587,11 @@ function colonize(c, f, ctx, rng, out) {
   if (!ctx.world || !rng) return;
   const towns = Math.max(1, aliveTowns(f).length);
   // Терпимость к тесноте — это и есть черта expansion: степняк отделяет колонию
-  // при вдвое меньшем населении, чем лесное согласие.
-  const need = FOUND_POP * towns * (12 / (6 + c.tr.expansion));
+  // при вдвое меньшем населении, чем лесное согласие. Прирождённым же
+  // завоевателям (aggression≥8 и expansion≥8) и малой охоты хватает: им поход
+  // и есть экспансия.
+  let need = FOUND_POP * towns * (12 / (6 + c.tr.expansion));
+  if (c.tr.aggression >= 8 && c.tr.expansion >= 8) need *= 0.6;
   if (f.P < need) return;
   // в) Гарнизон: пока страна воюет или держит оборону против сильного игрока,
   // резервы не размываются в дальние походы — выселок не основывается.
@@ -581,11 +625,17 @@ function findSpot(c, f, ctx, rng) {
   // данных не читаем. Робкий (aggression<7) не селится у самого плеча игрока,
   // чья армия выглядит не слабее своей.
   const scared = c.tr.aggression < 7 && (c._seenPlayerPower || 0) > Math.max(1, f.armyPts || 1);
+  // Смелому близость сильного не мешает, и часть проб он бросает прямо в
+  // сторону игрока: земля под чужим мечом обычно пустует — робкие её сторонятся.
+  const bold = !scared && c._threatened && c.tr.aggression >= 7;
   let best = null, bestScore = -Infinity;
   for (let attempt = 0; attempt < 40; attempt++) {
     const from = rng.pick(f.settlements);
     if (!from) return null;
-    const a = rng.range(0, Math.PI * 2);
+    let a = rng.range(0, Math.PI * 2);
+    if (bold && pset.length && attempt % 2 === 1) {
+      a = Math.atan2(pset[0].y - from.y, pset[0].x - from.x) + rng.range(-0.9, 0.9);
+    }
     const r = rng.range(FOUND_MIN_DIST, FOUND_MAX_DIST);
     const x = Math.round(from.x + Math.cos(a) * r), y = Math.round(from.y + Math.sin(a) * r);
     if (x < 3 || y < 3 || x >= world.w - 3 || y >= world.h - 3) continue;
@@ -609,7 +659,10 @@ function findSpot(c, f, ctx, rng) {
       if (t === TILE.FOREST || t === TILE.HILL || t === TILE.MOUNTAIN) res++;
     }
     let score = land * 0.02 + res * 0.35;
-    score += Math.min(pd, EXPANSION_PLAYER_FEAR) * (scared ? 0.15 : 0.04);
+    // Дистанция от игрока — забота только робкого народа: из равноценных мест
+    // он выбирает то, что подальше от чужого меча. Смелому близость сильного
+    // соседа не мешает — он не платит ни бонусом, ни штрафом.
+    if (scared) score += pd * 0.3;
     score += rng.next() * 0.5; // лёгкая жеребьёвка между равноценными местами
     if (score > bestScore) { bestScore = score; best = { x, y }; }
   }
