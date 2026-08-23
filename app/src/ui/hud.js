@@ -6,6 +6,13 @@ import { FileSave } from '../save/saveSystem.js';
 import { renderMarketPanel, bindMarketPanel, createMarketPanelState } from './panel_market.js';
 import { PANELS, memoryPanel, mastersPanel, ghostPanel, intelOf, intelTrustWord } from '../core/systems/integrate.js';
 import { renderDynastyPanel } from '../core/systems/link_dynasty.js';
+// Скин правой меню-панели подключается здесь, а не в main.js: вкладки собирает
+// именно hud.bind(), а скин только украшает уже готовые кнопки и сам ждёт их
+// появления (boot() опрашивает #sideTabs до старта) — порядок инициализации не
+// важен. Этот импорт ещё и единственный способ попасть в bundle: esbuild
+// проекта собирает всё от точки входа app/src/main.js → ui/hud.js, отдельных
+// списков модулей tools/build.mjs не хранит.
+import './menuskin.js';
 
 // Ядро не хранит скоростей добычи: производство размазано по жителям, погоде и
 // разовым событиям дня, а еда вообще списывается одним куском на смене суток.

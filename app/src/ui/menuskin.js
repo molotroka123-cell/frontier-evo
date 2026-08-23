@@ -43,10 +43,19 @@ function svg(id) {
 
 // ---------- CSS ----------
 function ensureCss() {
-  const href = new URL('menuskin.css', import.meta.url).href;
+  // Сначала ищем уже стоящий CSS и выходим ДО всякой работы с import.meta.
+  // Почему так: в собранном frontier.html (esbuild, формат iife) import.meta
+  // пуст, new URL('menuskin.css', <пустая база>) бросает исключение — а инлайн
+  // <style id="msk-inline"> туда ставит tools/build.mjs по образцу theme.css,
+  // поэтому линк в собранном файле не нужен вовсе. Порядок «сначала проверка»
+  // страхует и dev-режим: там до URL дело доходит только когда стиля нет.
   const already = [...document.querySelectorAll('link[rel="stylesheet"], style[id]')]
     .some(l => (l.href && l.href.indexOf('menuskin.css') !== -1) || l.id === 'msk-inline');
   if (already) return;
+  let href = '';
+  try {
+    href = new URL('menuskin.css', import.meta.url).href;
+  } catch { /* база недоступна — остаёмся без линка: CSS обязан прийти инлайном от сборки */ return; }
   const link = document.createElement('link');
   link.rel = 'stylesheet';
   link.href = href;

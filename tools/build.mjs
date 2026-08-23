@@ -111,7 +111,31 @@ try {
   themed = html.replace(THEME_LINK, `<style>\n${css}\n</style>`);
 } catch { /* файла темы нет — собираем как есть */ }
 
-writeFileSync(OUT, themed.replace(MARKER, `${artTag}<script>\n${safeJs}\n</script>`), 'utf8');
+// --- скин меню-панели --------------------------------------------------------
+// Запись добавлена по правилам esbuild-сборки этого проекта, ровно как у темы выше:
+// 1) JS скина здесь НЕ перечисляется вручную — проект собирает bundle от
+//    единственной точки входа ENTRY (app/src/main.js), и модуль попадает в код
+//    через обычный import './menuskin.js' в ui/hud.js. Отдельного «списка
+//    источников» build.mjs не ведёт: всё, что достижимо из ENTRY, esbuild
+//    тянет сам, остальное в билде не нужно.
+// 2) CSS скина инлайнится по той же причине, что theme.css: билд обязан
+//    работать по file:// без сети и без соседних файлов. Линка на menuskin.css
+//    в app/index.html нет и не будет (index.html — dev-режим), поэтому стиль
+//    ставится здесь отдельным тегом <style id="msk-inline"> рядом с кодом игры.
+//    Идентификатор msk-inline — договор с menuskin.js: его ensureCss() видит
+//    этот стиль и НЕ создаёт <link> на файл, которого рядом с frontier.html
+//    не существует (иначе каждый запуск был бы с тихой красной 404).
+const MSK_CSS = join(ROOT, 'app', 'src', 'ui', 'menuskin.css');
+let mskTag = '';
+try {
+  const mskCss = readFileSync(MSK_CSS, 'utf8');
+  // Закрывающий </style> внутри CSS разорвал бы тег так же, как </script>
+  // внутри JS выше, — экранируем тем же способом.
+  const safeCss = mskCss.replace(/<\/style>/gi, '<\\/style>');
+  mskTag = `<style id="msk-inline">\n${safeCss}\n</style>\n`;
+} catch { /* файла скина нет — играем без него, как и в dev-режиме */ }
+
+writeFileSync(OUT, themed.replace(MARKER, `${artTag}${mskTag}<script>\n${safeJs}\n</script>`), 'utf8');
 
 const kb = (statSync(OUT).size / 1024).toFixed(0);
-console.log(`frontier.html собран: ${kb} КБ (bundle ${(js.length / 1024).toFixed(0)} КБ) · нарисованных спрайтов: ${artCount}`);
+console.log(`frontier.html собран: ${kb} КБ (bundle ${(js.length / 1024).toFixed(0)} КБ) · нарисованных спрайтов: ${artCount} · скин меню: ${mskTag ? 'инлайн' : 'нет файла'}`);
