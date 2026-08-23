@@ -1,13 +1,14 @@
 // render/renderer.js — канвас-рендер (presentation-слой; ядро о нём не знает).
 // Процедурные спрайты эпох: здания эволюционируют визуально от шкур до стекла.
 // Местность, свет и погодные эффекты — см. terrain.js / palette.js / quality.js.
-import { TILE, ERAS, BUILDINGS, BUILDING_ERA_IDX, SPIRE_STAGES, SEASONS, WEATHER } from '../core/data.js';
+import { TILE, ERAS, BUILDINGS, BUILDING_ERA_IDX, SPIRE_STAGES, SEASONS, WEATHER, UNITS } from '../core/data.js';
 import { tileAt } from '../core/world.js';
 import { Terrain } from './terrain.js';
 import { SpriteCache } from './sprites.js';
 import { PeopleSprites, AnimalSprites, professionOf, lookOf } from './people.js';
+import { drawFactionTown } from './faction_town.js';
 import { ArtPack } from './artpack.js';
-import { QUALITY, guessQuality, loadQualityId, saveQualityId, makeAutoTuner } from './quality.js';
+import { QUALITY, guessQuality, loadQualityId, saveQualityId, makeAutoTuner, lodForZoom } from './quality.js';
 import { Atmosphere } from './weather.js';
 import { WaterLayer } from './water.js';
 import { Vegetation } from './vegetation.js';
@@ -19,8 +20,26 @@ import { IconLayer } from './icons.js';
 import { CityLights } from './city_lights.js';
 import { MinimapLayer } from './minimap.js';
 import { lightAt, hash2 } from './palette.js';
+// Отряды на карте: читаем только чистые функции army.js (без DOM, без rng).
+import { squadAlive, squadPower } from '../core/systems/army.js';
+// Агрегированное представление поселений: ступень роста, стены, война, ущерб.
+import { settlementView } from '../core/systems/settlement_view.js';
 
 const TILE_PX = 32; // мировая единица «тайл→экран» при zoom=1 — НЕ зависит от пресета графики
+
+// Таблица юнитов нужна слою ТОЛЬКО на чтение роли: по ней выбирается силуэт
+// бойца в колонне (пехота/стрелки/конница), а не по id отряда.
+const UNIT_BY_ID = Object.fromEntries(UNITS.map(u => [u.id, u]));
+
+// Детерминированный «шум» с сидом мира. Все случайные решения этого файла —
+// фаза шага бойца, вариант внешности, фаза мерцания костра — выводятся только
+// из координат и сида: ни Math.random, ни sim.rng (вызов общего генератора
+// сдвинул бы симуляцию и поплыли бы сейвы). Смеситель тот же, что в palette.hash2.
+function hashSeed(seed, x, y, salt) {
+  let h = (x * 374761393 + y * 668265263 + (seed | 0) * 1442695041 + salt * 2246822519) | 0;
+  h = ((h ^ (h >>> 13)) * 1274126177) | 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
 
 export class Renderer {
   constructor(canvas) {
@@ -47,6 +66,10 @@ export class Renderer {
     // Состояние анимации жителей живёт СНАРУЖИ симуляции: рендер читает
     // положение и сам считает направление и фазу шага.
     this.vstate = new WeakMap();
+    // То же для отрядов на карте и кэш листов, подкрашенных цветом фракции.
+    // Оба кэша держатся на объектах рендера: в стейт ядра слой не пишет.
+    this.armyVstate = new WeakMap();
+    this.tintCache = new WeakMap();
     // Нарисованный арт, если он завезён. Отсутствие файлов — не ошибка:
     // здание просто останется процедурным.
     this.art = new ArtPack();
@@ -171,12 +194,21 @@ export class Renderer {
     if (sim.showTerritory) this.drawTerritory(sim, ctx, ox, oy, z);
 
     // --- поселения фракций ---
+    // Силуэт города собирает render/faction_town.js из ПРОИЗВОДНОГО вида
+    // core/systems/settlement_view.js (ступень I–V, стены, война, ущерб,
+    // знамя): плоские «квадратики» прежней drawFactionSettlement удалены.
+    // Запас отсечения вырос с 60px до 3.5z — габарит сцены 3.2z×2.6z, и на
+    // старом запасе крупный город подрезался краем экрана при зуме.
+    const lod = lodForZoom(this.quality, this.cam.zoom);
+    const fires = [];   // ночные костры/факелы чужих городов — см. collectSettlementFires
     for (const f of sim.factions) {
       if (!f.alive) continue;
       for (const s of f.settlements) {
         const sx = ox + s.x * z, sy = oy + s.y * z;
-        if (sx < -60 || sy < -60 || sx > cw + 60 || sy > ch + 60) continue;
-        this.drawFactionSettlement(ctx, sx, sy, z, f, s, sim);
+        const m = z * 3.5 + 40;
+        if (sx < -m || sy < -m || sx > cw + m || sy > ch + m) continue;
+        drawFactionTown(ctx, sx, sy, z, f, s, sim, { L, time: this.time });
+        this.collectSettlementFires(fires, sim, f, s, sx, sy, z, L, lod);
       }
     }
 
@@ -187,10 +219,17 @@ export class Renderer {
     // нарисованных зданий ночью не светилось ничего.
     this.cityLights.begin(sim, ox, oy, z, cw, ch, L, { zoom: this.cam.zoom, time: this.time });
     this.cityLights.drawGround(ctx);
+    // Пятна от костров/факелов чужих городов ложатся вместе с пятнами
+    // city_lights: по земле, ДО прохода по зданиям — дома накрывают их краем.
+    this.drawSettlementFirePools(ctx, fires);
 
     // --- единый проход по глубине: здания + жители + животные, сортировка по Y ---
     this.drawSortedEntities(sim, ctx, ox, oy, z, cw, ch, L);
     this.cityLights.drawWindows(ctx);
+    // Языки пламени — поверх земли, рядом с окнами города; затем армии:
+    // колонны воинов вместо пунктирных линий рейдов и маршей.
+    this.drawSettlementFireFlames(ctx, fires);
+    this.drawArmies(sim, ctx, ox, oy, z, cw, ch, lod);
     this.select.drawGround(sim, ctx, ox, oy, z, cw, ch, dtReal);
     this.fx.drawWorld(ctx, ox, oy, z, cw, ch);
 
@@ -213,17 +252,10 @@ export class Renderer {
     }
 
     // --- маркер рейда ---
-    if (sim.raids.warning) {
-      const f = sim.factions.find(q => q.id === sim.raids.from);
-      const from = f && f.settlements[0] ? f.settlements[0] : { x: 0, y: 0 };
-      const c1 = this.worldToScreen(sim.world.startX, sim.world.startY);
-      const c2 = this.worldToScreen(from.x, from.y);
-      ctx.strokeStyle = `rgba(255,60,60,${0.5 + 0.3 * Math.sin(this.time * 6)})`;
-      ctx.lineWidth = 3;
-      ctx.setLineDash([8, 6]);
-      ctx.beginPath(); ctx.moveTo(c2.x, c2.y); ctx.lineTo(c1.x, c1.y); ctx.stroke();
-      ctx.setLineDash([]);
-    }
+    // Пунктирная линия «от города врага к нам» убрана: она рисовала маршрут,
+    // которого не существовало. Рейд теперь выходит на карту настоящим отрядом
+    // (sim.armyState.squads, см. drawArmies), а угрозу подсвечивает пульсирующее
+    // красное кольцо вокруг самого отряда набега.
 
     // --- атмосферная живность ---
     if (this.quality.fireflies) this.drawFireflies(sim, ctx, ox, oy, z, cw, ch, dtReal, L);
@@ -381,27 +413,264 @@ export class Renderer {
     );
   }
 
-  drawFactionSettlement(ctx, sx, sy, z, f, s, sim) {
-    const col = f.def.color;
-    const n = s.capital ? 5 : 3;
-    for (let i = 0; i < n; i++) {
-      const bx = sx + ((i % 3) - 1) * z * 0.8, by = sy + (Math.floor(i / 3) - 0.5) * z * 0.8;
-      ctx.fillStyle = col;
-      ctx.globalAlpha = 0.85;
-      ctx.fillRect(bx - z * 0.25, by - z * 0.25, z * 0.5, z * 0.5);
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = 'rgba(0,0,0,0.35)';
-      ctx.fillRect(bx - z * 0.25, by - z * 0.05, z * 0.5, z * 0.3);
+  // ---------------------------------------------------------------------
+  // Ночной свет чужих поселений. city_lights обслуживает только постройки
+  // игрока (sim.buildings), а у фракций свои огни: костёр шатрового лагеря,
+  // факелы у площади и ворот, зарево над свежим пепелищем. Позиции собирает
+  // collectSettlementFires в проходе по поселениям; пятна на земле ложатся до
+  // зданий (см. draw), языки пламени — после прохода по глубине.
+  collectSettlementFires(out, sim, f, s, sx, sy, z, L, lod) {
+    if (!L || L.glow <= 0.03 || !lod.buildingGlow) return;
+    const view = settlementView(sim, f, s);   // производный вид, сам кэшируется
+    if (!view) return;
+    const seed = ((sim.world && sim.world.seed) | 0) || 0x1e5ca7e;
+    const ax = sx + z * 0.5, gy = sy + z;     // та же геометрия якоря, что в faction_town
+    const a = Math.max(0, Math.min(1, L.glow));
+    const add = (x, y, kind, salt) => out.push({
+      x, y, z, kind, a,
+      phase: hashSeed(seed, (s.x | 0) * 4 + salt, (s.y | 0) * 4 - salt, salt) * 6.283,
+    });
+    if (view.tier === 0) {
+      // Костёр стоит там же, где его ставит сцена шатра (ax + 0.85z).
+      add(ax + z * 0.85, gy, 'camp', 3);
+    } else {
+      // Факелы по южной кромке площади; у каменной стены — пара у ворот.
+      add(ax - z * 0.8, gy + z * 0.18, 'torch', 11);
+      add(ax + z * 0.8, gy + z * 0.18, 'torch', 17);
+      if (view.walls === 2) {
+        add(ax - z * 0.34, gy + z * 0.26, 'torch', 23);
+        add(ax + z * 0.34, gy + z * 0.26, 'torch', 29);
+      }
     }
-    if (s.capital) {
-      ctx.strokeStyle = '#222';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(sx, sy - z); ctx.lineTo(sx, sy - z * 2.2); ctx.stroke();
-      ctx.fillStyle = col;
+    if (view.damaged) add(ax - z * 0.55, gy - z * 0.1, 'ruin', 41);
+  }
+
+  // Пятна света на земле. Ореол — тот же выпеченный glowSprite, что светит из
+  // окон и Шпиля: новых градиентов в кадре нет. Тяжёлая часть гасится вместе с
+  // bloom: на eco/medium слой молчит целиком.
+  drawSettlementFirePools(ctx, fires) {
+    if (!fires.length || !this.quality.bloom) return;
+    const halo = this.glowSprite(true);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of fires) {
+      const fl = 0.85 + 0.15 * Math.sin(this.time * 9 + p.phase);
+      const r = p.z * 1.35 * fl;
+      ctx.globalAlpha = (p.kind === 'ruin' ? 0.42 : 0.30) * p.a;
+      ctx.drawImage(halo, p.x - r, p.y - r * 0.72, r * 2, r * 1.44);
+    }
+    ctx.restore();
+  }
+
+  // Языки пламени. Дёшево (пара кривых Безье на огонь), поэтому живут при
+  // любом пресете: дальний зум уже отсечён гейтом lod.buildingGlow.
+  drawSettlementFireFlames(ctx, fires) {
+    for (const p of fires) {
+      const fl = 0.85 + 0.15 * Math.sin(this.time * 9 + p.phase);
+      const baseY = p.kind === 'torch' ? p.y - p.z * 0.34 : p.y;
+      if (p.kind === 'torch') {
+        // деревянный столб факела
+        ctx.fillStyle = '#4a3620';
+        ctx.fillRect(p.x - Math.max(1, p.z * 0.04), baseY, Math.max(2, p.z * 0.08), p.z * 0.34);
+      }
+      const w = p.z * 0.18, h = p.z * (p.kind === 'camp' ? 0.24 : 0.2);
+      ctx.fillStyle = p.kind === 'ruin' ? '#ff7030' : '#ff9a3c';
       ctx.beginPath();
-      ctx.moveTo(sx, sy - z * 2.2); ctx.lineTo(sx + z * 0.9, sy - z * 1.9); ctx.lineTo(sx, sy - z * 1.6);
+      ctx.moveTo(p.x - w / 2, baseY);
+      ctx.quadraticCurveTo(p.x, baseY - h * 2.1 * fl, p.x + w / 2, baseY);
+      ctx.fill();
+      ctx.fillStyle = '#ffd25a';
+      ctx.beginPath();
+      ctx.moveTo(p.x - w * 0.24, baseY);
+      ctx.quadraticCurveTo(p.x, baseY - h * 1.1 * fl, p.x + w * 0.24, baseY);
       ctx.fill();
     }
+  }
+
+  // ---------------------------------------------------------------------
+  // Армии на карте. Отряд в ядре — точка с числами; здесь он становится
+  // колонной людей из спрайтового генератора people.js: впереди знаменосец
+  // с флагом стороны, за ним пехота, стрелки и конница (крупнее — верховой
+  // силуэт). Фракционная расцветка — лёгкая тонировка листа, печётся один раз
+  // на пару «лист × цвет». Всё детерминировано от сида: марш задаёт пройденный
+  // путь, личные фазы шага бойцов — хеш клетки.
+  drawArmies(sim, ctx, ox, oy, z, cw, ch, lod) {
+    const state = sim.armyState;
+    if (!state || !Array.isArray(state.squads) || !state.squads.length) return;
+    if (!lod.people) return;   // тот же дальний порог, что у жителей
+    const seed = ((sim.world && sim.world.seed) | 0) || 0;
+    const era = Math.max(0, Math.min(9, sim.eraIndex | 0));
+    const raidId = sim.war && sim.war.raid ? sim.war.raid.squadId : 0;
+    for (const sq of state.squads) {
+      if (!squadAlive(sq)) continue;
+      const sx = ox + sq.x * z, sy = oy + sq.y * z;
+      const m = z * 2.5 + 60;
+      if (sx < -m || sy < -m || sx > cw + m || sy > ch + m) continue;
+      this.drawSquadColumn(sim, ctx, sq, sx, sy, z, seed, era, raidId);
+    }
+  }
+
+  // Визуальное состояние отряда: направление марша и пройденный путь. Схема та
+  // же, что у villagerState: фаза шага привязана к пути, а не к номеру кадра —
+  // на паузе колонна замирает, на ускорении шагает чаще. Телепорт (сейв) ног
+  // не крутит.
+  squadMotion(sq) {
+    let st = this.armyVstate.get(sq);
+    if (!st) { st = { x: sq.x, y: sq.y, hx: 1, hy: 0, walk: 0, still: 0 }; this.armyVstate.set(sq, st); }
+    const dx = sq.x - st.x, dy = sq.y - st.y;
+    const d = Math.hypot(dx, dy);
+    if (d > 1e-4) {
+      st.walk += d < 1.5 ? d : 0;
+      st.still = 0;
+      st.hx = dx / d; st.hy = dy / d;
+      st.x = sq.x; st.y = sq.y;
+    } else if (st.still < 100) st.still++;
+    return st;
+  }
+
+  // Цвет стороны для флага и расцветки: игрок золотой (как на миникарте),
+  // фракции — своим цветом из таблицы определений, безымянные рейдеры — сталью.
+  sideColorOf(sim, side) {
+    if (side === 'player') return '#c9a227';
+    const f = Array.isArray(sim.factions) && sim.factions.find(q => q.id === side);
+    return f && f.def ? f.def.color : '#8a8f98';
+  }
+
+  // Лист спрайтов, подкрашенный цветом фракции. Режим source-atop кладёт цвет
+  // ТОЛЬКО на непрозрачные пиксели силуэта — фон листа остаётся прозрачным,
+  // а одежда читается как форменный цвет стороны. Кэш держится на самом листе
+  // через WeakMap: смена пресета перечинит people.gen, старые листы умрут, и
+  // тонировка пересечётся сама — отдельной инвалидации не нужно.
+  tintedSheet(sheet, color) {
+    let m = this.tintCache.get(sheet);
+    if (!m) { m = new Map(); this.tintCache.set(sheet, m); }
+    let cv = m.get(color);
+    if (cv) return cv;
+    if (typeof document === 'undefined') return sheet.cv;
+    cv = document.createElement('canvas');
+    cv.width = sheet.cv.width; cv.height = sheet.cv.height;
+    const c = cv.getContext('2d');
+    c.drawImage(sheet.cv, 0, 0);
+    c.globalCompositeOperation = 'source-atop';
+    c.globalAlpha = 0.30;
+    c.fillStyle = color;
+    c.fillRect(0, 0, cv.width, cv.height);
+    m.set(color, cv);
+    if (m.size > 8) m.delete(m.keys().next().value);   // цветов меньше дюжины; потолок — на всякий случай
+    return cv;
+  }
+
+  drawSquadColumn(sim, ctx, sq, sx, sy, z, seed, era, raidId) {
+    const st = this.squadMotion(sq);
+    const color = this.sideColorOf(sim, sq.side);
+
+    // Состав колонны читаем из отряда: доли голов по родам войск переводятся в
+    // доли фигур, чтобы смешанный строй был честным. Одна фигура ≈ три бойца:
+    // рисовать поголовно нельзя ни по кадру, ни по читаемости.
+    let nInf = 0, nRng = 0, nCav = 0;
+    for (const [uid, n] of Object.entries(sq.units || {})) {
+      if (!(n > 0)) continue;
+      const u = UNIT_BY_ID[uid];
+      if (!u) continue;
+      if (u.role === 'cav') nCav += n;
+      else if (u.role === 'range') nRng += n;
+      else nInf += n;
+    }
+    const heads = nInf + nRng + nCav;
+    const fig = heads > 0 ? Math.max(3, Math.min(10, Math.ceil(heads / 3))) : 2;
+    const porter = heads === 0;   // обоз без бойцов рисуем носильщиками с ящиками
+
+    // Кольцо тревоги вокруг отряда набега — замена старому пунктиру:
+    // предупреждение стоит теперь именно на угрозе, а не на воображаемой линии.
+    if (sq.id === raidId) {
+      const pulse = 0.5 + 0.5 * Math.sin(this.time * 6);
+      ctx.strokeStyle = `rgba(255,60,60,${(0.32 + 0.34 * pulse).toFixed(3)})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(sx, sy + z * 0.06, z * 0.95, z * 0.42, 0, 0, 7);
+      ctx.stroke();
+    }
+
+    const tx = Math.floor(sq.x), ty = Math.floor(sq.y);
+    const members = [];
+    for (let i = 0; i < fig; i++) {
+      // клин: знаменосец впереди по ходу, за ним пары рядов с латеральным
+      // разносом; джиттер рядов — из хеша клетки, кадр в кадр одинаковый
+      const row = i === 0 ? 0 : (i + 1) >> 1;
+      const latK = i === 0 ? 0 : (i % 2 ? -1 : 1);
+      const lat = latK * (0.30 + 0.14 * hashSeed(seed, tx + i, ty, 1 + i));
+      const back = row * 0.52 + (i ? 0.10 * hashSeed(seed, tx, ty + i, 31 + i) : 0);
+      const along = 0.55 - back;
+      const mx = sx + st.hx * along - st.hy * lat;
+      const my = sy + st.hy * along + st.hx * lat;
+
+      // роль фигуры: доля голов -> доля колонны
+      const r = fig === 1 ? 0 : i / fig;
+      let prof, scale = 0.34;
+      if (porter) prof = 'trader';
+      else if (r < nInf / heads) prof = 'soldier';
+      else if (r < (nInf + nRng) / heads) { prof = 'hunter'; scale = 0.32; }  // стрелки: лук в руках
+      else { prof = 'soldier'; scale = 0.46; }                                // конница: крупнее — верховой силуэт
+      if (i === 0 && !porter) scale *= 1.1;                                   // знаменосец чуть выше строя
+
+      const look = (hashSeed(seed, tx * 3 + i, ty * 3 - i, 9) * 3) | 0;
+      const sh = this.people.sheet(era, prof, look);
+      const h = Math.max(8, z * scale);
+      const w = h * (sh.fw / sh.fh);
+      // фаза шага бойца: общий марш отряда плюс личный сдвиг от хеша клетки
+      const ph = hashSeed(seed, tx + i * 7, ty - i * 13, 5);
+      const frame = st.still > 2 ? 0 : ((((st.walk / 0.62 * 4 + ph * 4) | 0) % 4) + 4) % 4;
+      const dirIdx = Math.abs(st.hx) > Math.abs(st.hy) * 1.2 ? (st.hx > 0 ? 2 : 1) : (st.hy > 0 ? 0 : 3);
+      members.push({ head: i === 0, mx, my, h, w, frame, dirIdx, sh });
+    }
+
+    // глубина внутри колонны: дальние бойцы раньше ближних
+    members.sort((a, b) => a.my - b.my);
+    let minY = sy;
+    for (const m of members) {
+      this.shadows.unit(ctx, m.mx, m.my, m.w, m.h);
+      ctx.drawImage(
+        this.tintedSheet(m.sh, color),
+        m.frame * m.sh.fw, m.dirIdx * m.sh.fh, m.sh.fw, m.sh.fh,
+        Math.round(m.mx - m.w / 2), Math.round(m.my - m.h * 0.955), Math.round(m.w), Math.round(m.h),
+      );
+      if (m.my - m.h < minY) minY = m.my - m.h;
+    }
+
+    // Знамя над головой знаменосца: полотнище машет по времени кадра, фаза —
+    // от хеша клетки; по ходу марша флаг отклоняется назад, как на ветру.
+    const bearer = members.find(mm => mm.head);
+    if (bearer && !porter) {
+      const sign = st.hx >= 0 ? 1 : -1;
+      const px = bearer.mx, footY = bearer.my - bearer.h * 0.9;
+      const topY = footY - z * 0.95;
+      ctx.strokeStyle = '#4a3620';
+      ctx.lineWidth = Math.max(1, z * 0.05);
+      ctx.beginPath(); ctx.moveTo(px, footY); ctx.lineTo(px, topY); ctx.stroke();
+      const wob = Math.sin(this.time * 3 + hashSeed(seed, tx, ty, 77) * 6.283) * z * 0.07;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(px, topY);
+      ctx.lineTo(px + sign * z * 0.52, topY + z * 0.13 + wob);
+      ctx.lineTo(px, topY + z * 0.30);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Компактная полоса боевой мощи над строем. Шкала насыщающая p/(p+20):
+    // одна шкала одинаково осмысленна для ополченцев и поздних рыцарей, у
+    // пустого отряда полоса честно пустая.
+    const power = squadPower(sq, tileAt(sim.world, sq.x, sq.y));
+    const frac = Math.max(0, Math.min(1, power / (power + 20)));
+    const bw = Math.max(22, z * 0.8), bh = 3;
+    const bxx = sx - bw / 2, byy = minY - 7;
+    ctx.fillStyle = 'rgba(15,12,9,0.72)';
+    ctx.fillRect(bxx - 1, byy - 1, bw + 2, bh + 2);
+    ctx.fillStyle = frac > 0.6 ? '#7de37d' : frac > 0.3 ? '#e8c14a' : '#e37d7d';
+    ctx.fillRect(bxx, byy, Math.round(bw * frac), bh);
+    ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bxx - 1.5, byy - 1.5, bw + 3, bh + 3);
   }
 
   drawTerritory(sim, ctx, ox, oy, z) {
