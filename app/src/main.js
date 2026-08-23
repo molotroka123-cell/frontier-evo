@@ -12,6 +12,11 @@ import { tileAt } from './core/world.js';
 // Командный док и верхняя полоса ресурсов W3: сами ставят свой DOM и CSS.
 import './ui/dock.js';
 import './ui/topbar.js';
+// Шторка строительства W19: сама ставит свой DOM и CSS, ждёт __frontier опросом.
+import './ui/building_drawer.js';
+// Карточка-инспектор W20: сама подписывается на клики канваса и читает
+// window.__frontier — порядок инициализации не важен (см. заголовок модуля).
+import './ui/inspector.js';
 
 const canvas = document.getElementById('game');
 const saveSys = new BrowserSave();
