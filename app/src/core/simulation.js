@@ -413,7 +413,11 @@ export class Simulation {
     let h = 50;
     const pop = this.villagers.length;
     const housing = this.housingCap();
-    if (pop > housing) h -= 20;
+    // БЫЛО: −20 за само перенаселение. Один-два дня отстающих хижин роняли
+    // счастье ниже эмиграционной планки 35, дальше спираль: люди уходят →
+    // меньше рабочих → меньше дерева → хижин всё нет. −12 держит сигнал
+    // игроку, но не затягивает в воронку; усиленный штраф за +5 сверх остался.
+    if (pop > housing) h -= 12;
     const foodDays = this.res.food / Math.max(1, pop * EAT_PER_DAY);
     if (foodDays > 7) h += 10;
     if (this.res.food <= 0) h -= 25;
@@ -425,7 +429,7 @@ export class Simulation {
     if (this.techs.has('laws')) h += 10;
     if (this.techs.has('smartphones')) h += 10;
     if (this.raids.warning) h -= 5;
-    if (pop > housing + 5) h -= 10;
+    if (pop > housing + 5) h -= 8;
     if (this.hasGreat('prophet')) h += 10;
     h += WEATHER[this.weather].happy;
     // Разовые эффекты событий («Праздник» +8, «Знамение» +5, уступки бунтующим
@@ -1017,7 +1021,12 @@ export class Simulation {
     }
     // рождения
     const happy = this.happiness();
-    if (happy > 45 && this.res.food > pop * 3 && pop < this.housingCap()) {
+    // БЫЛО: порог рождений happy > 45 при фактической рабочей зоне счастья
+    // 28–41 (перенаселение −20 + снег/рейды) — рост стоял до эпохи 2, пока
+    // не приходил акведук; осторожный бот не построил 47 зданий из 58, потому
+    // что партия схлопывалась раньше. 40 открывает медленный рост в полосе
+    // 40–45 и оставляет 35–40 «терпимой» без роста.
+    if (happy > 40 && this.res.food > pop * 3 && pop < this.housingCap()) {
       let chance = 0.1;
       if (happy > 70) chance *= 1.5;
       if (this.hasBuilding('hospital')) chance *= 1.3;
@@ -1032,7 +1041,7 @@ export class Simulation {
     // набрать: рост останавливается сам, и это надо называть словами — иначе
     // молчаливый потолок выглядит как поломка, а игрок строит не то. Один раз
     // за эпизод; снимается, когда склад освободился или потолок вырос.
-    const foodRoofBlocked = happy > 45 && pop < this.housingCap()
+    const foodRoofBlocked = happy > 40 && pop < this.housingCap()
       && foodWasAtRoof && pop * 3 >= this.resCap.food;
     if (foodRoofBlocked && !this._foodRoofShown) {
       this._foodRoofShown = true;

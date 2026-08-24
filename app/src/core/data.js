@@ -111,12 +111,12 @@ export const TECH_ERA_IDX = (() => {
 // ---- Здания (~46). Старые 11 id сохранены ----
 // out: добыча в день на рабочего; housing: жильё; happy: счастье всем; special: маркер особой логики
 export const BUILDINGS = {
-  campfire:      { name: 'Кострище',           cost: {},                                  housing: 6,  know: 0.3, req: null, desc: 'Сердце поселения. +0.3📜/день.' },
+  campfire:      { name: 'Кострище',           cost: {},                                  housing: 6,  know: 0.3, happy: 2, req: null, desc: 'Сердце поселения. +0.3📜/день, +2 счастья — родной очаг.' },
   hut:           { name: 'Хижина',             cost: { wood: 6 },                         housing: 4,  req: null, desc: 'Жильё для 4 жителей.', evolve: 'house' },
   forager:       { name: 'Собиратели',         cost: { wood: 8 },                         workers: 2, out: { food: 2.2 }, req: null, desc: 'Собирательство поблизости.' },
   lumber:        { name: 'Лесопилка',          cost: { wood: 10 },                        workers: 3, out: { wood: 1.2 }, needTile: TILE.FOREST, req: null, desc: 'Ставится вплотную к лесу.', evolve: 'lumber' },
   quarry:        { name: 'Каменоломня',        cost: { wood: 12 },                        workers: 3, out: { stone: 1.0 }, needTile: TILE.HILL, req: null, desc: 'Ставится вплотную к холму.' },
-  story_fire:    { name: 'Костёр историй',     cost: { wood: 10 },                        workers: 2, out: { knowledge: 0.5 }, req: 'language', desc: 'Шаман рассказывает у огня.' },
+  story_fire:    { name: 'Костёр историй',     cost: { wood: 10 },                        workers: 2, out: { knowledge: 0.5 }, happy: 3, req: 'language', desc: 'Сказки у огня сплачивают: +3 счастья.' },
   hunter_lodge:  { name: 'Охотничья стоянка',  cost: { wood: 10 },                        workers: 3, out: { food: 2.6 }, req: 'hunting', desc: 'Охотники добывают дичь.' },
   pasture:       { name: 'Пастбище',           cost: { wood: 14 },                        workers: 3, out: { food: 2.4 }, needTile: TILE.GRASS, winter: true, req: 'animal_husbandry', desc: 'Еда даже зимой.' },
   farm:          { name: 'Ферма',              cost: { wood: 14 },                        workers: 4, out: { food: 3.0 }, needTile: TILE.GRASS, req: 'farming', desc: 'Основа питания. Зимой не работает.', evolve: 'farm' },
