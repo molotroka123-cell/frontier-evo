@@ -1,10 +1,10 @@
-// Тесты Command Dock (app/src/ui/dock.js) — W3.
+// Тесты командного бара (app/src/ui/dock.js) — стиль C&C: Generals.
 // Запуск: node app/tests/test-ui-dock.mjs
 //
 // DOM в node нет, и он здесь не нужен: у dock.js чистая часть (список кнопок,
-// порядок, разметка, маппинг вкладок) отделена от рендера маркером «DOM-ЧАСТЬ».
-// Сам импорт модуля — уже проверка: он обязан проходить без document/window
-// (рантайм спрятан за typeof document), иначе док нельзя бы было тестировать.
+// порядок, разметка, маппинг вкладок, хоткеи, мини-статус) отделена от рендера
+// маркером «DOM-ЧАСТЬ». Сам импорт модуля — уже проверка: он обязан проходить
+// без document/window (рантайм спрятан за typeof document).
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +12,8 @@ import { dirname, join } from 'node:path';
 
 const {
   DOCK_BUTTONS, MOBILE_MAX_PX,
-  buttonByTab, activeKeyFor, dockHtml,
+  SEASONS_RU, WEATHER_RU,
+  buttonByTab, activeKeyFor, dockHtml, miniStatus,
 } = await import('../src/ui/dock.js');
 
 let pass = 0, fail = 0;
@@ -62,6 +63,20 @@ t('«Законы» открывают вкладку Держава (там ж�
   eq(laws.tab, 'politics');
 });
 
+t('хоткеи — только те клавиши, что УЖЕ слушает main.js для вкладок', () => {
+  // main.js (keydown): b→build, r→research, t→army. Цифры 1..4 заняты
+  // setSpeed — нумеровать ими кнопки нельзя. Остальным углы пусты.
+  const hk = Object.fromEntries(DOCK_BUTTONS.map(b => [b.key, b.hk]));
+  eq(hk.build, 'B');
+  eq(hk.science, 'R');
+  eq(hk.army, 'T');
+  eq(hk.dynasty, '');
+  eq(hk.laws, '');
+  eq(hk.map, '');
+  // Кнопки с цифрами вместо букв были бы ложью игроку — запрещаем явно.
+  for (const b of DOCK_BUTTONS) ok(!/^[1-6]$/.test(b.hk), `${b.key}: хоткей не цифра`);
+});
+
 t('брейкпоинт телефона совпадает с брейкпоинтом игры', () => {
   eq(MOBILE_MAX_PX, 820);
 });
@@ -79,20 +94,63 @@ t('buttonByTab/activeKeyFor детерминированы', () => {
   }
 });
 
-t('разметка: порядок кнопок в HTML совпадает с порядком массива', () => {
+t('разметка: порядок кнопок совпадает с массивом, между ними фаски', () => {
   const html = dockHtml(DOCK_BUTTONS);
   const keys = [...html.matchAll(/data-ft-key="([^"]+)"/g)].map(m => m[1]);
   eq(keys.join('|'), DOCK_BUTTONS.map(b => b.key).join('|'));
   const tabs = [...html.matchAll(/data-ft-tab="([^"]+)"/g)].map(m => m[1]);
   eq(tabs.join('|'), DOCK_BUTTONS.map(b => b.tab).join('|'));
   ok((html.match(/ft-dock-btn/g) || []).length === 6, 'шесть кнопок в разметке');
+  eq((html.match(/ft-dock-sep/g) || []).length, 5, 'пять разделителей-фасок');
+});
+
+t('разметка несёт угловые хоткеи только там, где они работают', () => {
+  const html = dockHtml(DOCK_BUTTONS);
+  eq((html.match(/ft-dock-hk/g) || []).length, 3, 'три угловых бейджа B/R/T');
+  ok(html.includes('>B</span>') && html.includes('>R</span>') && html.includes('>T</span>'), 'буквы B R T на месте');
+  ok(html.includes('[B]'), 'хоткей продублирован в title для мыши');
 });
 
 t('разметка детерминирована и несёт подписи для aria', () => {
   const a = dockHtml(DOCK_BUTTONS), b = dockHtml(DOCK_BUTTONS);
   eq(a, b, 'два вызова — одна строка');
   ok(a.includes('aria-label="Строительство"'), 'aria-подпись есть');
-  ok(a.includes('aria-hidden="true"'), 'иконка скрыта от скринридера');
+  ok(a.includes('aria-hidden="true"'), 'иконки и фаски скрыты от скринридера');
+});
+
+t('мини-статус: день/сезон/погода строками, неизвестное — прочерк', () => {
+  const s = miniStatus({ day: 41.7, seasonIdx: 1, weather: 'sun' });
+  eq(s.day, '41');                       // дробный хвост дня игроку не нужен
+  eq(s.season, 'Лето');
+  eq(s.weather, 'Ясно');
+  const w = miniStatus({ day: 90, seasonIdx: 3, weather: 'snow' });
+  eq(w.season, 'Зима'); eq(w.weather, 'Снег');
+  const bad = miniStatus({ day: NaN, seasonIdx: 9, weather: 'storm' });
+  eq(bad.day, '—');                      // ноль выглядел бы как данные
+  eq(bad.season, '—');
+  eq(bad.weather, '—');
+  const empty = miniStatus(undefined);
+  eq(empty.day, '—'); eq(empty.weather, '—');
+  eq(JSON.stringify(miniStatus({ day: 5 })), JSON.stringify(miniStatus({ day: 5 })), 'детерминирован');
+});
+
+t('названия сезонов/погод совпадают со словами ядра (core/data.js)', () => {
+  // Значения сверены вручную с SEASONS и WEATHER[].ru в core/data.js: слой UI
+  // ядро не импортирует, поэтому контракт держит этот тест.
+  eq(SEASONS_RU.join('|'), ['Весна', 'Лето', 'Осень', 'Зима'].join('|'));
+  eq(WEATHER_RU.sun, 'Ясно');
+  eq(WEATHER_RU.cloud, 'Облачно');
+  eq(WEATHER_RU.rain, 'Дождь');
+  eq(WEATHER_RU.snow, 'Снег');
+});
+
+t('стиль бара — военный металл Generals: палитра и кромка в CSS', () => {
+  // Палитра задания закреплена тестом, чтобы рестайл не поплыл незаметно.
+  ok(CODE.includes('#1a1d18'), 'тёмный металл #1a1d18');
+  ok(CODE.includes('#c8a24a'), 'янтарь #c8a24a');
+  ok(/border-top:\s*1px solid var\(--ft-amber\)/.test(CODE), 'янтарная кромка сверху');
+  ok(CODE.includes('--ft-metal'), 'локальные переменные металла с префиксом');
+  ok(!CODE.includes('border-radius'), 'плита бара без пилюльных радиусов');
 });
 
 t('pure/render части разделены маркером, в чистой нет document', () => {
