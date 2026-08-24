@@ -554,9 +554,14 @@ export class Simulation {
   }
 
   threatPoints() {
-    const eraBase = 40 * Math.pow(1.5, this.eraIndex);
+    // БЫЛО: eraBase=40 и степень ^0.7 — упругость волны к росту игрока была
+    // 0.561 вместо 1: при удвоении богатства волна росла лишь в 1.5 раза,
+    // и отставала от игрока в 2.7–7.6 раза на длинных партиях (репро-волна,
+    // 4×12000 дней). Стало линейно, а eraBase 40→30 калибрует стартовую волну
+    // на прежний уровень. rng не трогает, в сейве числа нет — совместимо.
+    const eraBase = 30 * Math.pow(1.5, this.eraIndex);
     const wRef = 2000 * Math.pow(1.6, this.eraIndex);
-    return eraBase * Math.pow(0.5 + this.wealth() / wRef, 0.7);
+    return eraBase * (0.5 + this.wealth() / wRef);
   }
 
   // ---------- ТИК СИМУЛЯЦИИ ----------
