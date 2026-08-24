@@ -1029,6 +1029,12 @@ h4.group {
 </style>
 <script>
 (() => {
+  var __defProp = Object.defineProperty;
+  var __export = (target2, all) => {
+    for (var name in all)
+      __defProp(target2, name, { get: all[name], enumerable: true });
+  };
+
   // app/src/core/rng.js
   function createRng(seed) {
     let a = seed >>> 0;
@@ -6780,12 +6786,12 @@ h4.group {
     const out = [];
     if (!cands.length || max <= 0) return out;
     const start5 = rng ? rng.int(0, cands.length - 1) : 0;
-    let num16 = 1;
+    let num17 = 1;
     for (let k = 0; k < cands.length && out.length < max; k++) {
       const c = cands[(start5 + k) % cands.length];
       if (out.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < spacing)) continue;
       if (state2.points.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < spacing)) continue;
-      out.push(addPoint(state2, kind, c.x, c.y, `${POINT_KIND_RU[kind]} №${num16++}`));
+      out.push(addPoint(state2, kind, c.x, c.y, `${POINT_KIND_RU[kind]} №${num17++}`));
     }
     return out;
   }
@@ -30715,8 +30721,385 @@ ${s}`, "console");
     return typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
   }
 
-  // app/src/render/shadows.js
+  // app/src/render/projection3d.js
+  var projection3d_exports = {};
+  __export(projection3d_exports, {
+    PITCH_MAX: () => PITCH_MAX,
+    PITCH_MIN: () => PITCH_MIN,
+    TILE_PX: () => TILE_PX2,
+    ZOOM_MAX: () => ZOOM_MAX,
+    ZOOM_MIN: () => ZOOM_MIN,
+    camStep: () => camStep,
+    clampCam: () => clampCam,
+    makeCam: () => makeCam,
+    projectPoint: () => projectPoint,
+    projectTile: () => projectTile,
+    screenToTile: () => screenToTile,
+    sortKey: () => sortKey,
+    tileHeightAt: () => tileHeightAt,
+    unprojectPoint: () => unprojectPoint,
+    wrapAngle: () => wrapAngle
+  });
   var TILE_PX2 = 32;
+  var PITCH_MIN = 35 * Math.PI / 180;
+  var PITCH_MAX = 60 * Math.PI / 180;
+  var ZOOM_MIN = 0.5;
+  var ZOOM_MAX = 2.5;
+  var CAM_TAU = 0.09;
+  function num16(v, dflt) {
+    const n = +v;
+    return Number.isFinite(n) ? n : dflt;
+  }
+  function wrapAngle(a) {
+    let x = (num16(a, 0) + Math.PI) % (2 * Math.PI);
+    if (x < 0) x += 2 * Math.PI;
+    return x - Math.PI;
+  }
+  function makeCam(over = {}) {
+    return clampCam({
+      yaw: over.yaw != null ? over.yaw : 0,
+      pitch: over.pitch != null ? over.pitch : 45 * Math.PI / 180,
+      zoom: over.zoom != null ? over.zoom : 1,
+      targetX: over.targetX != null ? over.targetX : 48,
+      targetY: over.targetY != null ? over.targetY : 48
+    });
+  }
+  function clampCam(cam) {
+    return {
+      yaw: wrapAngle(num16(cam.yaw, 0)),
+      pitch: Math.min(PITCH_MAX, Math.max(PITCH_MIN, num16(cam.pitch, 45 * Math.PI / 180))),
+      zoom: Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, num16(cam.zoom, 1))),
+      targetX: num16(cam.targetX, 0),
+      targetY: num16(cam.targetY, 0)
+    };
+  }
+  function projectPoint(x, y, h, cam, tilePx = TILE_PX2) {
+    const dx = x - cam.targetX;
+    const dy = y - cam.targetY;
+    const c = Math.cos(cam.yaw), s = Math.sin(cam.yaw);
+    const rx = dx * c - dy * s;
+    const ry = dx * s + dy * c;
+    const sp = Math.sin(cam.pitch), cp = Math.cos(cam.pitch);
+    const k = tilePx * cam.zoom;
+    return {
+      sx: rx * k,
+      sy: ry * sp * k - num16(h, 0) * cp * k,
+      // высота поднимает точку вверх экрана
+      scale: cam.zoom
+    };
+  }
+  function projectTile(tx, ty, h, cam, tilePx = TILE_PX2) {
+    return projectPoint(tx, ty, h, cam, tilePx);
+  }
+  function unprojectPoint(sx, sy, h, cam, tilePx = TILE_PX2) {
+    const k = tilePx * cam.zoom;
+    const sp = Math.sin(cam.pitch), cp = Math.cos(cam.pitch);
+    const rx = sx / k;
+    const ry = (sy / k + num16(h, 0) * cp) / sp;
+    const c = Math.cos(cam.yaw), s = Math.sin(cam.yaw);
+    return {
+      x: cam.targetX + rx * c + ry * s,
+      y: cam.targetY - rx * s + ry * c
+    };
+  }
+  function screenToTile(sx, sy, cam, opts = {}) {
+    const heightAt = opts.heightAt || null;
+    const tol = num16(opts.tol, 1e-6);
+    const maxIters = Math.max(1, num16(opts.iters, 12));
+    let h = 0;
+    let p = unprojectPoint(sx, sy, h, cam, opts.tilePx);
+    for (let i = 0; i < maxIters && heightAt; i++) {
+      h = num16(heightAt(p.x, p.y), 0);
+      const next = unprojectPoint(sx, sy, h, cam, opts.tilePx);
+      const moved = Math.max(Math.abs(next.x - p.x), Math.abs(next.y - p.y));
+      p = next;
+      if (moved <= tol) break;
+    }
+    return { x: p.x, y: p.y, h };
+  }
+  function sortKey(tx, ty, cam) {
+    const dx = tx - cam.targetX;
+    const dy = ty - cam.targetY;
+    return dx * Math.sin(cam.yaw) + dy * Math.cos(cam.yaw);
+  }
+  function camStep(cam, target2, dt, opts = {}) {
+    const tau = num16(opts.tau, CAM_TAU);
+    const t = Math.max(0, num16(dt, 0));
+    const k = t > 0 ? 1 - Math.exp(-t / tau) : 0;
+    const dYaw = wrapAngle(num16(target2.yaw, 0) - cam.yaw);
+    return clampCam({
+      yaw: cam.yaw + dYaw * k,
+      pitch: cam.pitch + (num16(target2.pitch, cam.pitch) - cam.pitch) * k,
+      zoom: cam.zoom + (num16(target2.zoom, cam.zoom) - cam.zoom) * k,
+      targetX: cam.targetX + (num16(target2.targetX, cam.targetX) - cam.targetX) * k,
+      targetY: cam.targetY + (num16(target2.targetY, cam.targetY) - cam.targetY) * k
+    });
+  }
+  function tileHeightAt(world, x, y) {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const outside = !world || xi < 0 || yi < 0 || xi >= (world.w | 0) || yi >= (world.h | 0);
+    if (outside) return TILE_HEIGHT[TILE.DEEP];
+    if (world.elev) return world.elev[yi * world.w + xi];
+    return TILE_HEIGHT[world.tiles[yi * world.w + xi]] || 0;
+  }
+
+  // app/src/render/relief3d.js
+  var WATER_DROP = 0.14;
+  var BASE_TILE_PX = 32;
+  var DEFAULT_PITCH = Math.PI / 4;
+  var MIN_WALL_PX = 10;
+  var CAPS = { eco: 700, medium: 1600, high: 3200, ultra: 5200 };
+  var FIELDS_KEEP = 4;
+  function hashSeed(seed, x, y, salt) {
+    let h = x * 374761393 + y * 668265263 + (seed | 0) * 1442695041 + salt * 2246822519 | 0;
+    h = (h ^ h >>> 13) * 1274126177 | 0;
+    return ((h ^ h >>> 16) >>> 0) / 4294967296;
+  }
+  function vnoise(seed, x, y) {
+    const oct = (f, salt) => {
+      const fx = x * f, fy = y * f;
+      const xi = Math.floor(fx), yi = Math.floor(fy);
+      let sx = fx - xi, sy = fy - yi;
+      sx = sx * sx * (3 - 2 * sx);
+      sy = sy * sy * (3 - 2 * sy);
+      const a = hashSeed(seed, xi, yi, salt), b = hashSeed(seed, xi + 1, yi, salt);
+      const c = hashSeed(seed, xi, yi + 1, salt), d = hashSeed(seed, xi + 1, yi + 1, salt);
+      const top = a + (b - a) * sx, bot = c + (d - c) * sx;
+      return top + (bot - top) * sy;
+    };
+    return oct(0.09, 7) * 0.64 + oct(0.31, 13) * 0.36;
+  }
+  function buildHeightField(world) {
+    const w = world.w | 0, h = world.h | 0, N = w * h;
+    const t = world.tiles;
+    const elev = world.elev && world.elev.length === N ? world.elev : null;
+    let eMin = Infinity, eMax = -Infinity;
+    if (elev) {
+      for (let i = 0; i < N; i++) {
+        const e = elev[i];
+        if (e < eMin) eMin = e;
+        if (e > eMax) eMax = e;
+      }
+    }
+    const span = elev && eMax - eMin > 1e-6 ? eMax - eMin : 0;
+    const seed = world.seed | 0;
+    const H = new Float32Array(N);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x, tt = t[i];
+        if (tt === TILE.DEEP || tt === TILE.WATER) continue;
+        const n = vnoise(seed, x, y);
+        let v;
+        if (tt === TILE.MOUNTAIN) {
+          v = 3 - (1 - n) * 0.25;
+        } else if (tt === TILE.HILL) {
+          v = 1.72 + n * 0.56;
+        } else {
+          const base = tt === TILE.SAND ? 0.16 : tt === TILE.FOREST ? 0.5 : 0.34;
+          v = base + (n - 0.5) * (tt === TILE.SAND ? 0.26 : 0.66);
+          if (v < 0.05) v = 0.05;
+          else if (v > 1) v = 1;
+        }
+        if (span > 0) {
+          const e = (elev[i] - eMin) / span * 3;
+          v = v * 0.62 + e * 0.38;
+          if (v < 0.03) v = 0.03;
+        }
+        H[i] = v;
+      }
+    }
+    return { w, h, H };
+  }
+  var _fields = /* @__PURE__ */ new Map();
+  function fieldOf(world) {
+    let f = _fields.get(world);
+    if (!f) {
+      f = buildHeightField(world);
+      _fields.set(world, f);
+      while (_fields.size > FIELDS_KEEP) _fields.delete(_fields.keys().next().value);
+    }
+    return f;
+  }
+  var _fallbackProject = (x, y, h, cam, tilePx = BASE_TILE_PX) => {
+    const k = tilePx * cam.zoom;
+    const sp = Math.sin(DEFAULT_PITCH), cp = Math.cos(DEFAULT_PITCH);
+    return {
+      sx: (x - cam.targetX) * k,
+      sy: (y - cam.targetY) * k * sp - (h || 0) * k * cp
+    };
+  };
+  var _fallbackUnproject = (sx, sy, h, cam, tilePx = BASE_TILE_PX) => {
+    const k = tilePx * cam.zoom;
+    const sp = Math.sin(DEFAULT_PITCH), cp = Math.cos(DEFAULT_PITCH);
+    return {
+      x: cam.targetX + sx / k,
+      y: cam.targetY + (sy / k + (h || 0) * cp) / sp
+    };
+  };
+  var _fallbackSortKey = (tx, ty, cam) => ty - cam.targetY;
+  var projectOf = (x, y, h, cam, tilePx) => (projection3d_exports && projectPoint ? projectPoint : _fallbackProject)(x, y, h, cam, tilePx);
+  var unprojectOf = (sx, sy, h, cam, tilePx) => (projection3d_exports && unprojectPoint ? unprojectPoint : _fallbackUnproject)(sx, sy, h, cam, tilePx);
+  function sortKey2(tx, ty, cam) {
+    return (projection3d_exports && sortKey ? sortKey : _fallbackSortKey)(tx, ty, cam);
+  }
+  function camOf(cam) {
+    if (cam && typeof cam.targetX === "number") return cam;
+    const c = cam || {};
+    return {
+      yaw: 0,
+      pitch: DEFAULT_PITCH,
+      zoom: c.zoom > 0 ? c.zoom : 1,
+      targetX: c.targetX != null ? c.targetX : c.x || 0,
+      targetY: c.targetY != null ? c.targetY : c.y || 0
+    };
+  }
+  function drawTile3d(ctx, world, x, y, cam, palette = TERRAIN[0], opts = {}) {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const f = fieldOf(world);
+    if (xi < 0 || yi < 0 || xi >= f.w || yi >= f.h) return 0;
+    const i = yi * f.w + xi;
+    const tt = world.tiles[i];
+    const hh = f.H[i];
+    const wet = tt === TILE.DEEP || tt === TILE.WATER;
+    const p = palette && palette[tt] || { base: "#808080", lo: "#606060", hi: "#a0a0a0" };
+    const topCol = shade(p.base, wet ? 0.06 : 0.04 + hashSeed(world.seed, xi, yi, 3) * 0.08);
+    const cam3d = camOf(cam);
+    const tilePx = opts.tilePx > 0 ? opts.tilePx : BASE_TILE_PX;
+    const cx = opts.cx || 0, cy = opts.cy || 0;
+    const P = (wx, wy, wh) => {
+      const q = projectOf(wx, wy, wh, cam3d, tilePx);
+      return { x: cx + q.sx, y: cy + q.sy };
+    };
+    const zTop = wet ? -WATER_DROP : hh;
+    const A = P(xi, yi, zTop);
+    const B2 = P(xi + 1, yi, zTop);
+    const C = P(xi + 1, yi + 1, zTop);
+    const D = P(xi, yi + 1, zTop);
+    let faces = 0;
+    if (!wet && hh >= 0.03 && opts.walls !== false) {
+      const As = P(xi, yi + 1, 0);
+      const Bs = P(xi + 1, yi, 0);
+      const Cs = P(xi + 1, yi + 1, 0);
+      ctx.fillStyle = shade(p.base, -0.12);
+      ctx.beginPath();
+      ctx.moveTo(D.x, D.y);
+      ctx.lineTo(C.x, C.y);
+      ctx.lineTo(Cs.x, Cs.y);
+      ctx.lineTo(As.x, As.y);
+      ctx.closePath();
+      ctx.fill();
+      faces++;
+      ctx.fillStyle = shade(p.base, -0.22);
+      ctx.beginPath();
+      ctx.moveTo(B2.x, B2.y);
+      ctx.lineTo(C.x, C.y);
+      ctx.lineTo(Cs.x, Cs.y);
+      ctx.lineTo(Bs.x, Bs.y);
+      ctx.closePath();
+      ctx.fill();
+      faces++;
+    }
+    ctx.fillStyle = topCol;
+    ctx.beginPath();
+    ctx.moveTo(A.x, A.y);
+    ctx.lineTo(B2.x, B2.y);
+    ctx.lineTo(C.x, C.y);
+    ctx.lineTo(D.x, D.y);
+    ctx.closePath();
+    ctx.fill();
+    faces++;
+    if (wet) {
+      const k = tilePx * cam3d.zoom;
+      const j = (hashSeed(world.seed, xi, yi, 11) - 0.5) * 0.3;
+      const uL = 0.38 + j, uR = 0.62 + j;
+      const Lx = A.x + (D.x - A.x) * uL, Ly = A.y + (D.y - A.y) * uL;
+      const Rx = B2.x + (C.x - B2.x) * uR, Ry = B2.y + (C.y - B2.y) * uR;
+      ctx.strokeStyle = "rgba(210,236,255,0.20)";
+      ctx.lineWidth = Math.max(1, k * 0.09);
+      ctx.beginPath();
+      ctx.moveTo(Lx + (B2.x - A.x) * 0.16, Ly + (B2.y - A.y) * 0.16);
+      ctx.lineTo(Rx - (B2.x - A.x) * 0.16, Ry - (B2.y - A.y) * 0.16);
+      ctx.stroke();
+    }
+    return faces;
+  }
+  function collectTiles(world, viewRect, cam, opts = {}) {
+    const f = fieldOf(world);
+    const cam3d = camOf(cam);
+    const tilePx = opts.tilePx > 0 ? opts.tilePx : BASE_TILE_PX;
+    const cx = viewRect.cx || 0, cy = viewRect.cy || 0;
+    const cs = [
+      unprojectOf(-cx, -cy, 0, cam3d, tilePx),
+      unprojectOf(viewRect.cw - cx, -cy, 0, cam3d, tilePx),
+      unprojectOf(-cx, viewRect.ch - cy, 0, cam3d, tilePx),
+      unprojectOf(viewRect.cw - cx, viewRect.ch - cy, 0, cam3d, tilePx)
+    ];
+    let wx0 = Infinity, wx1 = -Infinity, wy0 = Infinity, wy1 = -Infinity;
+    for (const q of cs) {
+      if (q.x < wx0) wx0 = q.x;
+      if (q.x > wx1) wx1 = q.x;
+      if (q.y < wy0) wy0 = q.y;
+      if (q.y > wy1) wy1 = q.y;
+    }
+    const PAD2 = 2;
+    const x0 = Math.max(0, Math.floor(wx0) - PAD2), x1 = Math.min(f.w - 1, Math.ceil(wx1) + PAD2);
+    const y0 = Math.max(0, Math.floor(wy0) - PAD2), y1 = Math.min(f.h - 1, Math.ceil(wy1) + PAD2);
+    const out = [];
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const i = y * f.w + x;
+        const tt = world.tiles[i];
+        const wet = tt === TILE.DEEP || tt === TILE.WATER;
+        const hh = f.H[i];
+        const zTop = wet ? -WATER_DROP : hh;
+        const a = projectOf(x, y, zTop, cam3d, tilePx);
+        const b = projectOf(x + 1, y, zTop, cam3d, tilePx);
+        const c = projectOf(x + 1, y + 1, zTop, cam3d, tilePx);
+        const d = projectOf(x, y + 1, zTop, cam3d, tilePx);
+        const minX = Math.min(a.sx, b.sx, c.sx, d.sx) + cx;
+        const maxX = Math.max(a.sx, b.sx, c.sx, d.sx) + cx;
+        const minY = Math.min(a.sy, b.sy, c.sy, d.sy) + cy;
+        const cp = Math.abs(Math.cos(cam3d.pitch));
+        const drop2 = (wet ? WATER_DROP : hh) * cp * tilePx * cam3d.zoom;
+        const maxY = Math.max(a.sy, b.sy, c.sy, d.sy) + cy + drop2;
+        if (maxX <= 0 || minX >= viewRect.cw || maxY <= 0 || minY >= viewRect.ch) continue;
+        out.push({ key: sortKey2(x + 1, y + 1, cam3d), x, y });
+      }
+    }
+    out.sort((p, q) => p.key - q.key || p.x - q.x || p.y - q.y);
+    return out;
+  }
+  function relief3dGate(quality) {
+    const id = quality && quality.id || "high";
+    const cap = CAPS[id] != null ? CAPS[id] : CAPS.high;
+    return { on: id !== "eco", cap };
+  }
+  function drawRelief3d(ctx, world, cam, viewRect, opts = {}) {
+    if (!ctx || !world || !world.tiles) return 0;
+    const gate = relief3dGate(opts.quality);
+    if (!gate.on) return 0;
+    const cam3d = camOf(cam);
+    const tilePx = opts.tilePx > 0 ? opts.tilePx : BASE_TILE_PX;
+    const items = collectTiles(world, viewRect, cam3d, { tilePx });
+    const palette = opts.palette || TERRAIN[0];
+    const cap = typeof opts.cap === "number" ? opts.cap : gate.cap;
+    const k = tilePx * cam3d.zoom;
+    const walls = k >= MIN_WALL_PX && opts.walls !== false;
+    let drawn = 0;
+    for (let n = 0; n < items.length; n++) {
+      drawTile3d(ctx, world, items[n].x, items[n].y, cam3d, palette, {
+        walls: walls && n < cap,
+        tilePx,
+        cx: viewRect.cx || 0,
+        cy: viewRect.cy || 0
+      });
+      drawn++;
+    }
+    return drawn;
+  }
+
+  // app/src/render/shadows.js
+  var TILE_PX3 = 32;
   var SHADOW_LIMITS = {
     casts: 420,
     // вытянутых теней в кадре; больше — просто не рисуем
@@ -30921,7 +31304,7 @@ ${s}`, "console");
       this._mFrame = -1;
       this.on = false;
       if (!sim2 || this.off || !this.enabled) return;
-      const zoom = z / TILE_PX2;
+      const zoom = z / TILE_PX3;
       const minZoom = this.q.lod && this.q.lod.shadowMinZoom || 0.65;
       if (zoom < minZoom) return;
       this.on = true;
@@ -32396,7 +32779,7 @@ ${s}`, "console");
   };
 
   // app/src/render/select.js
-  var TILE_PX3 = 32;
+  var TILE_PX4 = 32;
   var SELECT_LIMITS = {
     auras: 8,
     // рамок ауры в кадре; штатно их 1-2, потолок нужен для showAllAuras
@@ -32528,7 +32911,7 @@ ${s}`, "console");
       const hov = sim2 && sim2.placing ? null : this.hover;
       const sel = this.sel;
       if (!hov && !sel && !this.showAllAuras) return;
-      const lod = lodForZoom(this.q, z / TILE_PX3);
+      const lod = lodForZoom(this.q, z / TILE_PX4);
       if (hov) this.tileMark(ctx, ox, oy, z, cw, ch, hov);
       if (sel) this.markerFor(ctx, ox, oy, z, cw, ch, sel, "pick", lod);
       if (hov && !sameTarget(hov, sel)) this.markerFor(ctx, ox, oy, z, cw, ch, hov, "hover", lod);
@@ -33208,7 +33591,7 @@ ${s}`, "console");
   }
 
   // app/src/render/city_lights.js
-  var TILE_PX4 = 32;
+  var TILE_PX5 = 32;
   var clamp017 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
   function hashB(seed, x, y, salt) {
     let h = x * 374761393 + y * 668265263 + seed * 1442695041 + salt * 2246822519 | 0;
@@ -33368,7 +33751,7 @@ ${s}`, "console");
       if (!sim2 || !L) return;
       this.night = L.glow;
       if (this.night <= 0.03) return;
-      const zoom = z / TILE_PX4;
+      const zoom = z / TILE_PX5;
       const lod = lodForZoom(this.q, zoom);
       if (!lod.buildingGlow) return;
       this.on = true;
@@ -34051,9 +34434,9 @@ ${s}`, "console");
   };
 
   // app/src/render/renderer.js
-  var TILE_PX5 = 32;
+  var TILE_PX6 = 32;
   var UNIT_BY_ID3 = Object.fromEntries(UNITS.map((u) => [u.id, u]));
-  function hashSeed(seed, x, y, salt) {
+  function hashSeed2(seed, x, y, salt) {
     let h = x * 374761393 + y * 668265263 + (seed | 0) * 1442695041 + salt * 2246822519 | 0;
     h = (h ^ h >>> 13) * 1274126177 | 0;
     return ((h ^ h >>> 16) >>> 0) / 4294967296;
@@ -34063,6 +34446,7 @@ ${s}`, "console");
       this.canvas = canvas2;
       this.ctx = canvas2.getContext("2d");
       this.cam = { x: 48, y: 48, zoom: 1 };
+      this.view3d = makeCam({ targetX: 48, targetY: 48 });
       this.particles = [];
       this.fireflies = [];
       this.birds = [];
@@ -34131,14 +34515,14 @@ ${s}`, "console");
     }
     screenToWorld(sx, sy) {
       return {
-        x: this.cam.x + (sx - this.canvas.width / this.dpr / 2) / (TILE_PX5 * this.cam.zoom),
-        y: this.cam.y + (sy - this.canvas.height / this.dpr / 2) / (TILE_PX5 * this.cam.zoom)
+        x: this.cam.x + (sx - this.canvas.width / this.dpr / 2) / (TILE_PX6 * this.cam.zoom),
+        y: this.cam.y + (sy - this.canvas.height / this.dpr / 2) / (TILE_PX6 * this.cam.zoom)
       };
     }
     worldToScreen(wx, wy) {
       return {
-        x: (wx - this.cam.x) * TILE_PX5 * this.cam.zoom + this.canvas.width / this.dpr / 2,
-        y: (wy - this.cam.y) * TILE_PX5 * this.cam.zoom + this.canvas.height / this.dpr / 2
+        x: (wx - this.cam.x) * TILE_PX6 * this.cam.zoom + this.canvas.width / this.dpr / 2,
+        y: (wy - this.cam.y) * TILE_PX6 * this.cam.zoom + this.canvas.height / this.dpr / 2
       };
     }
     // ---------------------------------------------------------------------
@@ -34152,9 +34536,19 @@ ${s}`, "console");
       const L = lightAt(sim2.dayTime);
       ctx.fillStyle = L.sky;
       ctx.fillRect(0, 0, cw, ch);
-      const z = TILE_PX5 * this.cam.zoom;
+      const z = TILE_PX6 * this.cam.zoom;
       const ox = cw / 2 - this.cam.x * z, oy = ch / 2 - this.cam.y * z;
-      this.terrain.draw(ctx, sim2, ox, oy, z, cw, ch);
+      if (sim2.view3d && relief3dGate(this.quality).on) {
+        drawRelief3d(
+          ctx,
+          sim2.world,
+          this.view3d,
+          { cx: cw / 2, cy: ch / 2, cw, ch },
+          { palette: TERRAIN[sim2.seasonIdx] || TERRAIN[0], quality: this.quality }
+        );
+      } else {
+        this.terrain.draw(ctx, sim2, ox, oy, z, cw, ch);
+      }
       if (this.quality.richRelief) this.relief.draw(sim2, ctx, ox, oy, z, cw, ch, L);
       if (this.quality.richWater) this.water.draw(sim2, ctx, ox, oy, z, cw, ch, dtReal, L);
       else if (this.quality.water) this.terrain.drawWater(ctx, sim2, ox, oy, z, cw, ch, this.time);
@@ -34228,7 +34622,7 @@ ${s}`, "console");
         ctx,
         cw,
         ch,
-        { time: this.time, cam: this.cam, tilePx: TILE_PX5 }
+        { time: this.time, cam: this.cam, tilePx: TILE_PX6 }
       );
     }
     // ---------------------------------------------------------------------
@@ -34362,7 +34756,7 @@ ${s}`, "console");
         z,
         kind,
         a,
-        phase: hashSeed(seed, (s.x | 0) * 4 + salt, (s.y | 0) * 4 - salt, salt) * 6.283
+        phase: hashSeed2(seed, (s.x | 0) * 4 + salt, (s.y | 0) * 4 - salt, salt) * 6.283
       });
       if (view.tier === 0) {
         add(ax + z * 0.85, gy, "camp", 3);
@@ -34521,8 +34915,8 @@ ${s}`, "console");
       for (let i = 0; i < fig; i++) {
         const row = i === 0 ? 0 : i + 1 >> 1;
         const latK = i === 0 ? 0 : i % 2 ? -1 : 1;
-        const lat = latK * (0.3 + 0.14 * hashSeed(seed, tx + i, ty, 1 + i));
-        const back = row * 0.52 + (i ? 0.1 * hashSeed(seed, tx, ty + i, 31 + i) : 0);
+        const lat = latK * (0.3 + 0.14 * hashSeed2(seed, tx + i, ty, 1 + i));
+        const back = row * 0.52 + (i ? 0.1 * hashSeed2(seed, tx, ty + i, 31 + i) : 0);
         const along = 0.55 - back;
         const mx = sx + st.hx * along - st.hy * lat;
         const my = sy + st.hy * along + st.hx * lat;
@@ -34538,11 +34932,11 @@ ${s}`, "console");
           scale = 0.46;
         }
         if (i === 0 && !porter) scale *= 1.1;
-        const look = hashSeed(seed, tx * 3 + i, ty * 3 - i, 9) * 3 | 0;
+        const look = hashSeed2(seed, tx * 3 + i, ty * 3 - i, 9) * 3 | 0;
         const sh = this.people.sheet(era, prof, look);
         const h = Math.max(8, z * scale);
         const w = h * (sh.fw / sh.fh);
-        const ph = hashSeed(seed, tx + i * 7, ty - i * 13, 5);
+        const ph = hashSeed2(seed, tx + i * 7, ty - i * 13, 5);
         const frame2 = st.still > 2 ? 0 : ((st.walk / 0.62 * 4 + ph * 4 | 0) % 4 + 4) % 4;
         const dirIdx = Math.abs(st.hx) > Math.abs(st.hy) * 1.2 ? st.hx > 0 ? 2 : 1 : st.hy > 0 ? 0 : 3;
         members.push({ head: i === 0, mx, my, h, w, frame: frame2, dirIdx, sh });
@@ -34575,7 +34969,7 @@ ${s}`, "console");
         ctx.moveTo(px, footY);
         ctx.lineTo(px, topY);
         ctx.stroke();
-        const wob = Math.sin(this.time * 3 + hashSeed(seed, tx, ty, 77) * 6.283) * z * 0.07;
+        const wob = Math.sin(this.time * 3 + hashSeed2(seed, tx, ty, 77) * 6.283) * z * 0.07;
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.moveTo(px, topY);
@@ -39885,8 +40279,8 @@ ${out}`;
     if (v === null || v === void 0 || !Number.isFinite(v)) return { text: "·", cls: "off" };
     const a = Math.abs(v);
     if (a < 0.05) return { text: `0/д`, cls: "zero" };
-    const num16 = a >= 10 ? Math.round(a) : +a.toFixed(1);
-    return { text: `${v > 0 ? "+" : "−"}${num16}/д`, cls: v > 0 ? "up" : "dn" };
+    const num17 = a >= 10 ? Math.round(a) : +a.toFixed(1);
+    return { text: `${v > 0 ? "+" : "−"}${num17}/д`, cls: v > 0 ? "up" : "dn" };
   }
   function snapshotOf2(simLike) {
     const res = {};
@@ -40723,7 +41117,7 @@ ${out}`;
         renderer.cam.x -= dx / z;
         renderer.cam.y -= dy / z;
         panVel = { x: -dx / z, y: -dy / z };
-        clampCam();
+        clampCam2();
       }
     }
   });
@@ -40764,13 +41158,13 @@ ${out}`;
     const after = renderer.screenToWorld(sx, sy);
     renderer.cam.x += before.x - after.x;
     renderer.cam.y += before.y - after.y;
-    clampCam();
+    clampCam2();
   }
   canvas.addEventListener("wheel", (e) => {
     e.preventDefault();
     zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 0.89);
   }, { passive: false });
-  function clampCam() {
+  function clampCam2() {
     renderer.cam.x = Math.max(0, Math.min(96, renderer.cam.x));
     renderer.cam.y = Math.max(0, Math.min(96, renderer.cam.y));
   }
@@ -40780,7 +41174,7 @@ ${out}`;
     if (e.clientX >= m.x && e.clientX <= m.x + m.w && e.clientY >= m.y && e.clientY <= m.y + m.h) {
       renderer.cam.x = (e.clientX - m.x) / m.scale;
       renderer.cam.y = (e.clientY - m.y) / m.scale;
-      clampCam();
+      clampCam2();
     }
   });
   var keys = /* @__PURE__ */ new Set();
@@ -40817,13 +41211,13 @@ ${out}`;
     if (keys.has("s") || keys.has("arrowdown")) renderer.cam.y += camSpeed;
     if (keys.has("a") || keys.has("arrowleft")) renderer.cam.x -= camSpeed;
     if (keys.has("d") || keys.has("arrowright")) renderer.cam.x += camSpeed;
-    clampCam();
+    clampCam2();
     if (!dragMoved && (Math.abs(panVel.x) > 0.01 || Math.abs(panVel.y) > 0.01)) {
       renderer.cam.x += panVel.x * dtReal * 8;
       renderer.cam.y += panVel.y * dtReal * 8;
       panVel.x *= 0.9;
       panVel.y *= 0.9;
-      clampCam();
+      clampCam2();
     }
     if (!sim.paused) {
       const spd = hud.speed === 1 ? 0.5 : hud.speed;

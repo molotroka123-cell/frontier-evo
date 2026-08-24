@@ -13,17 +13,22 @@ import { Atmosphere } from './weather.js';
 import { WaterLayer } from './water.js';
 import { Vegetation } from './vegetation.js';
 import { ReliefLayer } from './relief.js';
+// 3D-стадия 2: объёмный рельеф за флагом sim.view3d (по умолчанию ВЫКЛ).
+import { drawRelief3d, relief3dGate } from './relief3d.js';
 import { ShadowLayer } from './shadows.js';
 import { FxLayer } from './fx.js';
 import { SelectLayer } from './select.js';
 import { IconLayer } from './icons.js';
 import { CityLights } from './city_lights.js';
 import { MinimapLayer } from './minimap.js';
-import { lightAt, hash2 } from './palette.js';
+import { lightAt, hash2, TERRAIN } from './palette.js';
 // Отряды на карте: читаем только чистые функции army.js (без DOM, без rng).
 import { squadAlive, squadPower } from '../core/systems/army.js';
 // Агрегированное представление поселений: ступень роста, стены, война, ущерб.
 import { settlementView } from '../core/systems/settlement_view.js';
+// 3D-камера: чистая математика проекции (стадия 1). Старая this.cam не тронута —
+// минимапа/coach/main читают её поля.
+import { makeCam } from './projection3d.js';
 
 const TILE_PX = 32; // мировая единица «тайл→экран» при zoom=1 — НЕ зависит от пресета графики
 
@@ -46,6 +51,8 @@ export class Renderer {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.cam = { x: 48, y: 48, zoom: 1 };
+  // Отдельная 3D-камера для объёмного рельефа; включается флагом sim.view3d.
+  this.view3d = makeCam({ targetX: 48, targetY: 48 });
     this.particles = [];
     this.fireflies = [];
     this.birds = [];
@@ -153,7 +160,15 @@ export class Renderer {
     const ox = cw / 2 - this.cam.x * z, oy = ch / 2 - this.cam.y * z;
 
     // --- местность (чанками, рельефное освещение, береговая линия) ---
-    this.terrain.draw(ctx, sim, ox, oy, z, cw, ch);
+    // Объёмная земля — только по явному флагу sim.view3d и при качестве не eco:
+    // тысяча path-заливок против одного блита чанка, включаем после замера FPS.
+    if (sim.view3d && relief3dGate(this.quality).on) {
+      drawRelief3d(ctx, sim.world, this.view3d,
+        { cx: cw / 2, cy: ch / 2, cw, ch },
+        { palette: TERRAIN[sim.seasonIdx] || TERRAIN[0], quality: this.quality });
+    } else {
+      this.terrain.draw(ctx, sim, ox, oy, z, cw, ch);
+    }
     // Рельефная светотень: замер 62 -> 9 FPS, то есть модуль съедает семь восьмых
     // кадра. Агент не успел его замерить до отсечки лимита. Включаем только на
     // ultra, который выбирается руками; на автопресетах карта остаётся прежней.
