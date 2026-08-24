@@ -32,6 +32,34 @@
 // drawImage; ни одного createRadialGradient, getImageData и ctx.filter.
 import { hash2 } from './palette.js';
 import { settlementView } from '../core/systems/settlement_view.js';
+// Единый арт: дома вражеских городов пекутся тем же SpriteCache, что и
+// здания игрока («у врагов такие же текстуры, как у меня»). Кэш ПРИХОДИТ
+// ИЗ рендерера (opts.sprites) — ленивую самодеятельность здесь не заводим:
+// в тестах document подменён заглушкой ради выпечки знамён, и чужой кэш
+// там перехватил бы отрисовку. Нет кэша — рисуем процедурный дом как раньше.
+import { BUILDINGS } from '../core/data.js';
+
+// Спрайтовый дом: рисует печёный спрайт игрока; false — вызывающий код
+// падает на старый процедурный дом (headless-среды без переданного кэша).
+function spriteHouse(ctx, cache, id, era, hx, footY, wPx) {
+  if (!cache) return false;
+  let spr = null;
+  try { spr = cache.building(id, BUILDINGS[id] || {}, era, 1); } catch { return false; }
+  if (!spr || !spr.cv) return false;
+  const h = wPx * (spr.cv.height / spr.cv.width);
+  ctx.drawImage(spr.cv, Math.round(hx - wPx / 2), Math.round(footY - h), Math.round(wPx), Math.round(h));
+  return true;
+}
+
+// Состав улицы по ступени: деревня — изба, лесопилка и очаг историй; посад —
+// камень и рынок; столица — замок в первом слоте. Только СУЩЕСТВУЮЩИЕ id
+// игрока из BUILDINGS — никаких новых сущностей ради картинки.
+const TOWN_IDS = {
+  1: ['hut', 'lumber', 'story_fire'],
+  2: ['hut', 'story_fire', 'lumber', 'hut', 'farm'],
+  3: ['stone_house', 'smithy', 'market', 'stone_house', 'hut', 'stone_house'],
+  4: ['castle', 'stone_house', 'market', 'stone_house', 'smithy', 'stone_house'],
+};
 
 // Материалы двух «эпох» застройки. Дерево — ранние ступени, камень и черепица —
 // поздние; держим их локально, чтобы палитра посёлка не разъезжалась с палитрой
@@ -336,6 +364,10 @@ export function drawFactionTown(ctx, sx, sy, z, f, s, sim, opts = {}) {
     : 0;
   const winA = night > 0 ? (0.3 + 0.65 * night).toFixed(3) : '0';
   const time = typeof opts.time === 'number' ? opts.time : 0;
+  // Спрайтовый кэш ТОЛЬКО от рендерера: в тестах document — заглушка, там
+  // спрайты не печём, чтобы не перехватывать проверяемый процедурный путь.
+  const cache = opts.sprites || null;
+  const era = Math.max(0, Math.min(9, sim.eraIndex | 0));
 
   const ax = sx + z * 0.5;      // ось поселения — центр якорной клетки
   const gy = sy + z;            // подошва — низ якорной клетки
@@ -443,7 +475,15 @@ export function drawFactionTown(ctx, sx, sy, z, f, s, sim, opts = {}) {
         y: footY, fn: () => {
           if (isRuin) ruin(ctx, hx, footY, w, hb + rh * 0.5, time, rnd);
           else if (sl.kind === 't') tower(ctx, hx, footY, w * 0.55, hb + rh * 0.9, night, winA, r1);
-          else house(ctx, hx, footY, w, hb, rh, wall, roof, stone, wc > 0 ? night : 0, winA, r1, r2);
+          else {
+            // Дом — спрайт игрока (единый арт с городом игрока), состав
+            // улицы по ступени города. Без кэша — старый процедурный дом.
+            const ids = TOWN_IDS[tier] || TOWN_IDS[1];
+            const id = ids[i % ids.length];
+            if (!spriteHouse(ctx, cache, id, era, hx, footY, w * 1.25)) {
+              house(ctx, hx, footY, w, hb, rh, wall, roof, stone, wc > 0 ? night : 0, winA, r1, r2);
+            }
+          }
         },
       });
     }

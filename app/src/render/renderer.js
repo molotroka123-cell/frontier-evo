@@ -222,7 +222,7 @@ export class Renderer {
         const sx = ox + s.x * z, sy = oy + s.y * z;
         const m = z * 3.5 + 40;
         if (sx < -m || sy < -m || sx > cw + m || sy > ch + m) continue;
-        drawFactionTown(ctx, sx, sy, z, f, s, sim, { L, time: this.time });
+        drawFactionTown(ctx, sx, sy, z, f, s, sim, { L, time: this.time, sprites: this.sprites });
         this.collectSettlementFires(fires, sim, f, s, sx, sy, z, L, lod);
       }
     }

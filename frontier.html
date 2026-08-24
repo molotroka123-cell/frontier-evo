@@ -1190,12 +1190,12 @@ h4.group {
     return map;
   })();
   var BUILDINGS = {
-    campfire: { name: "Кострище", cost: {}, housing: 6, know: 0.3, req: null, desc: "Сердце поселения. +0.3📜/день." },
+    campfire: { name: "Кострище", cost: {}, housing: 6, know: 0.3, happy: 2, req: null, desc: "Сердце поселения. +0.3📜/день, +2 счастья — родной очаг." },
     hut: { name: "Хижина", cost: { wood: 6 }, housing: 4, req: null, desc: "Жильё для 4 жителей.", evolve: "house" },
     forager: { name: "Собиратели", cost: { wood: 8 }, workers: 2, out: { food: 2.2 }, req: null, desc: "Собирательство поблизости." },
     lumber: { name: "Лесопилка", cost: { wood: 10 }, workers: 3, out: { wood: 1.2 }, needTile: TILE.FOREST, req: null, desc: "Ставится вплотную к лесу.", evolve: "lumber" },
     quarry: { name: "Каменоломня", cost: { wood: 12 }, workers: 3, out: { stone: 1 }, needTile: TILE.HILL, req: null, desc: "Ставится вплотную к холму." },
-    story_fire: { name: "Костёр историй", cost: { wood: 10 }, workers: 2, out: { knowledge: 0.5 }, req: "language", desc: "Шаман рассказывает у огня." },
+    story_fire: { name: "Костёр историй", cost: { wood: 10 }, workers: 2, out: { knowledge: 0.5 }, happy: 3, req: "language", desc: "Сказки у огня сплачивают: +3 счастья." },
     hunter_lodge: { name: "Охотничья стоянка", cost: { wood: 10 }, workers: 3, out: { food: 2.6 }, req: "hunting", desc: "Охотники добывают дичь." },
     pasture: { name: "Пастбище", cost: { wood: 14 }, workers: 3, out: { food: 2.4 }, needTile: TILE.GRASS, winter: true, req: "animal_husbandry", desc: "Еда даже зимой." },
     farm: { name: "Ферма", cost: { wood: 14 }, workers: 4, out: { food: 3 }, needTile: TILE.GRASS, req: "farming", desc: "Основа питания. Зимой не работает.", evolve: "farm" },
@@ -18839,7 +18839,7 @@ h4.group {
       let h = 50;
       const pop = this.villagers.length;
       const housing = this.housingCap();
-      if (pop > housing) h -= 20;
+      if (pop > housing) h -= 12;
       const foodDays = this.res.food / Math.max(1, pop * EAT_PER_DAY);
       if (foodDays > 7) h += 10;
       if (this.res.food <= 0) h -= 25;
@@ -18850,7 +18850,7 @@ h4.group {
       if (this.techs.has("laws")) h += 10;
       if (this.techs.has("smartphones")) h += 10;
       if (this.raids.warning) h -= 5;
-      if (pop > housing + 5) h -= 10;
+      if (pop > housing + 5) h -= 8;
       if (this.hasGreat("prophet")) h += 10;
       h += WEATHER[this.weather].happy;
       h += this._happyBonus || 0;
@@ -19410,7 +19410,7 @@ h4.group {
         }
       }
       const happy = this.happiness();
-      if (happy > 45 && this.res.food > pop * 3 && pop < this.housingCap()) {
+      if (happy > 40 && this.res.food > pop * 3 && pop < this.housingCap()) {
         let chance = 0.1;
         if (happy > 70) chance *= 1.5;
         if (this.hasBuilding("hospital")) chance *= 1.3;
@@ -19421,7 +19421,7 @@ h4.group {
           this.addLog("Родился новый житель!", "good");
         }
       }
-      const foodRoofBlocked = happy > 45 && pop < this.housingCap() && foodWasAtRoof && pop * 3 >= this.resCap.food;
+      const foodRoofBlocked = happy > 40 && pop < this.housingCap() && foodWasAtRoof && pop * 3 >= this.resCap.food;
       if (foodRoofBlocked && !this._foodRoofShown) {
         this._foodRoofShown = true;
         this.addChronicle(`Амбары полны под крышу (${Math.round(this.resCap.food)}🍞) — запаса на новых жителей не напастись, рост остановился. Нужен Амбар.`);
@@ -26045,6 +26045,25 @@ ${s}`, "console");
   }
 
   // app/src/render/faction_town.js
+  function spriteHouse(ctx, cache, id, era, hx, footY, wPx) {
+    if (!cache) return false;
+    let spr = null;
+    try {
+      spr = cache.building(id, BUILDINGS[id] || {}, era, 1);
+    } catch {
+      return false;
+    }
+    if (!spr || !spr.cv) return false;
+    const h = wPx * (spr.cv.height / spr.cv.width);
+    ctx.drawImage(spr.cv, Math.round(hx - wPx / 2), Math.round(footY - h), Math.round(wPx), Math.round(h));
+    return true;
+  }
+  var TOWN_IDS = {
+    1: ["hut", "lumber", "story_fire"],
+    2: ["hut", "story_fire", "lumber", "hut", "farm"],
+    3: ["stone_house", "smithy", "market", "stone_house", "hut", "stone_house"],
+    4: ["castle", "stone_house", "market", "stone_house", "smithy", "stone_house"]
+  };
   var WOOD_WALL = ["#9c7a48", "#8a6a3e"];
   var WOOD_ROOF = ["#6b4f35", "#5d442c"];
   var STONE_WALL = ["#b1aa9a", "#a29a89"];
@@ -26320,6 +26339,8 @@ ${s}`, "console");
     const night = L && L.tint && L.tint[3] > 0.2 ? typeof L.glow === "number" ? Math.max(0, Math.min(1, L.glow)) : 1 : 0;
     const winA = night > 0 ? (0.3 + 0.65 * night).toFixed(3) : "0";
     const time = typeof opts.time === "number" ? opts.time : 0;
+    const cache = opts.sprites || null;
+    const era = Math.max(0, Math.min(9, sim2.eraIndex | 0));
     const ax = sx + z * 0.5;
     const gy = sy + z;
     const canBake = typeof document !== "undefined" && !!document.createElement;
@@ -26407,7 +26428,13 @@ ${s}`, "console");
           fn: () => {
             if (isRuin) ruin(ctx, hx, footY, w, hb + rh * 0.5, time, rnd);
             else if (sl.kind === "t") tower(ctx, hx, footY, w * 0.55, hb + rh * 0.9, night, winA, r1);
-            else house(ctx, hx, footY, w, hb, rh, wall, roof, stone, wc > 0 ? night : 0, winA, r1, r23);
+            else {
+              const ids = TOWN_IDS[tier] || TOWN_IDS[1];
+              const id = ids[i % ids.length];
+              if (!spriteHouse(ctx, cache, id, era, hx, footY, w * 1.25)) {
+                house(ctx, hx, footY, w, hb, rh, wall, roof, stone, wc > 0 ? night : 0, winA, r1, r23);
+              }
+            }
           }
         });
       }
@@ -34569,7 +34596,7 @@ ${s}`, "console");
           const sx = ox + s.x * z, sy = oy + s.y * z;
           const m = z * 3.5 + 40;
           if (sx < -m || sy < -m || sx > cw + m || sy > ch + m) continue;
-          drawFactionTown(ctx, sx, sy, z, f, s, sim2, { L, time: this.time });
+          drawFactionTown(ctx, sx, sy, z, f, s, sim2, { L, time: this.time, sprites: this.sprites });
           this.collectSettlementFires(fires, sim2, f, s, sx, sy, z, L, lod);
         }
       }
