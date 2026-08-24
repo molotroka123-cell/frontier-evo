@@ -6779,10 +6779,10 @@ h4.group {
   function _pickSpread(state2, cands, kind, max, spacing, rng) {
     const out = [];
     if (!cands.length || max <= 0) return out;
-    const start6 = rng ? rng.int(0, cands.length - 1) : 0;
+    const start5 = rng ? rng.int(0, cands.length - 1) : 0;
     let num16 = 1;
     for (let k = 0; k < cands.length && out.length < max; k++) {
-      const c = cands[(start6 + k) % cands.length];
+      const c = cands[(start5 + k) % cands.length];
       if (out.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < spacing)) continue;
       if (state2.points.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < spacing)) continue;
       out.push(addPoint(state2, kind, c.x, c.y, `${POINT_KIND_RU[kind]} №${num16++}`));
@@ -18972,9 +18972,9 @@ h4.group {
       return w;
     }
     threatPoints() {
-      const eraBase = 40 * Math.pow(1.5, this.eraIndex);
+      const eraBase = 30 * Math.pow(1.5, this.eraIndex);
       const wRef = 2e3 * Math.pow(1.6, this.eraIndex);
-      return eraBase * Math.pow(0.5 + this.wealth() / wRef, 0.7);
+      return eraBase * (0.5 + this.wealth() / wRef);
     }
     // ---------- ТИК СИМУЛЯЦИИ ----------
     tick(dt) {
@@ -25992,8 +25992,8 @@ ${s}`, "console");
   function scanDamage(sim2, sx, sy) {
     const log = sim2.log;
     if (!Array.isArray(log)) return false;
-    const start6 = Math.max(0, log.length - DAMAGE_WINDOW);
-    for (let i = log.length - 1; i >= start6; i--) {
+    const start5 = Math.max(0, log.length - DAMAGE_WINDOW);
+    for (let i = log.length - 1; i >= start5; i--) {
       const e = log[i];
       if (!e || typeof e.text !== "string" || e.text.indexOf(WAR_MARK) < 0) continue;
       const m = COORD_RE.exec(e.text);
@@ -35539,206 +35539,710 @@ ${s}`, "console");
     }).join(" ") || "—";
   }
 
-  // app/src/ui/menuskin.js
-  var import_meta = {};
-  var ICONS = {
-    build: '<path d="M14.6 3.8l5.6 5.6-3 3-5.6-5.6z"/><path d="M12 7L3.5 15.5V21h5.5L17 12.5"/>',
-    research: '<path d="M9 3h6"/><path d="M10 3v5l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.6 14h8.8"/>',
-    army: '<path d="M3.5 3.5l16.5 16.5"/><path d="M20.5 3.5L4 20"/><path d="M7 3H3.5v3.5"/><path d="M17 3h3.5v3.5"/>',
-    diplo: '<path d="M6 21V4"/><path d="M6 4h11.5l-2.4 3.5 2.4 3.5H6"/>',
-    market: '<path d="M12 4v16"/><path d="M7 20h10"/><path d="M5 7h14"/><path d="M7.2 7l-3 6a3.1 3.1 0 0 0 6.2 0z"/><path d="M16.8 7l-3 6a3.1 3.1 0 0 0 6.2 0z"/>',
-    people: '<circle cx="9" cy="8" r="3.2"/><path d="M3.4 19.5a5.6 5.6 0 0 1 11.2 0"/><path d="M15.6 5.2a3.2 3.2 0 0 1 0 5.6"/><path d="M17 14.4a5.6 5.6 0 0 1 3.6 5.1"/>',
-    industry: '<path d="M3.5 20.5V9.5l5.5 3.5v-3.5l5.5 3.5v-3.5l6 3.7v7.3z"/><path d="M6.8 16.9h.01"/><path d="M10.8 16.9h.01"/>',
-    war: '<path d="M12 3.5l7 2.7v5.4c0 4.6-2.9 7.6-7 9.4-4.1-1.8-7-4.8-7-9.4V6.2z"/>',
-    politics: '<path d="M3.5 21h17"/><path d="M3.5 10.5L12 4l8.5 6.5z"/><path d="M5.5 10.5V18"/><path d="M9.8 10.5V18"/><path d="M14.2 10.5V18"/><path d="M18.5 10.5V18"/><path d="M3.5 18h17"/>',
-    empire: '<path d="M5 21V6h2.4v2.4h2.2V6h4.8v2.4h2.2V6H19v15z"/><path d="M9.8 21v-3.8a2.2 2.2 0 0 1 4.4 0V21"/><path d="M5 10.5h14"/>',
-    labor: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
-    goals: '<circle cx="12" cy="12" r="8.4"/><circle cx="12" cy="12" r="4.4"/><circle cx="12" cy="12" r="0.8"/>',
-    memory: '<path d="M2.8 4.8h6.4A2.8 2.8 0 0 1 12 7.6v12.6a2.4 2.4 0 0 0-2.4-2H2.8z"/><path d="M21.2 4.8h-6.4A2.8 2.8 0 0 0 12 7.6v12.6a2.4 2.4 0 0 1 2.4-2h6.8z"/>',
-    log: '<path d="M8.5 6h12"/><path d="M8.5 12h12"/><path d="M8.5 18h12"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/>',
-    // вкладки, добавленные поверх этого списка другими ветками разработки
-    dynasty: '<circle cx="12" cy="8" r="3.4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0z"/><path d="M12 3v2"/>'
+  // app/src/ui/building_drawer.js
+  var CATEGORIES = [
+    { key: "home", ru: "Жильё и Быт" },
+    { key: "extract", ru: "Добыча и Склады" },
+    { key: "workshops", ru: "Мастерские" },
+    { key: "defense", ru: "Оборона и Стены" },
+    { key: "culture", ru: "Культ и Чудеса" }
+  ];
+  var CATEGORY_ICONS = {
+    home: "🏠",
+    extract: "⛏️",
+    workshops: "⚙️",
+    defense: "🛡️",
+    culture: "🏛️"
   };
-  function svg(id) {
-    return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[id] || ""}</svg>`;
+  var FALLBACK_CAT = "workshops";
+  var CATEGORY_OF = {
+    // — Жильё и Быт: крыша над головой и повседневная жизнь (лечебницы и
+    //   канализация тут, а не в «Мастерских», потому что игрок ищет их словом
+    //   «быт», а не «производство»).
+    campfire: "home",
+    hut: "home",
+    story_fire: "home",
+    stone_house: "home",
+    apartment: "home",
+    skyscraper: "home",
+    aqueduct: "home",
+    sewers: "home",
+    clinic: "home",
+    hospital: "home",
+    // — Добыча и Склады: сырьё, еда и потолки склада. Торговля и финансы тоже
+    //   здесь: рынок/банк/сокровищница «добывают» золото как шахта — камень.
+    forager: "extract",
+    lumber: "extract",
+    quarry: "extract",
+    hunter_lodge: "extract",
+    pasture: "extract",
+    farm: "extract",
+    mill: "extract",
+    port: "extract",
+    mine: "extract",
+    granary: "extract",
+    woodshed: "extract",
+    stoneyard: "extract",
+    depot: "extract",
+    market: "extract",
+    treasury: "extract",
+    bank: "extract",
+    stock_exchange: "extract",
+    guild_hall: "extract",
+    shipyard: "extract",
+    train_station: "extract",
+    airport: "extract",
+    // — Мастерские: тяжёлое производство и энергетика (паровая и далее).
+    smithy: "workshops",
+    workshop: "workshops",
+    factory: "workshops",
+    robo_factory: "workshops",
+    foundry: "workshops",
+    power_plant: "workshops",
+    npp: "workshops",
+    solar: "workshops",
+    fusion_reactor: "workshops",
+    // — Оборона и Стены: военные постройки; Замок здесь, хоть он даёт и жильё —
+    //   игрок ищет его по слову «оборона».
+    palisade: "defense",
+    stone_walls: "defense",
+    barracks: "defense",
+    armory: "defense",
+    castle: "defense",
+    // — Культ и Чудеса: вера, зрелища, наука и финальные мегапроекты. Наука
+    //   живёт здесь, а не в «Мастерских»: знания в ФРОНТИРЕ — культурный путь
+    //   к Шпилю.
+    temple: "culture",
+    amphitheater: "culture",
+    media_tower: "culture",
+    academy: "culture",
+    university: "culture",
+    press: "culture",
+    observatory: "culture",
+    lab: "culture",
+    datacenter: "culture",
+    biolab: "culture",
+    ai_core: "culture",
+    spaceport: "culture",
+    spire: "culture"
+  };
+  var ICONS = {
+    campfire: "🔥",
+    hut: "🛖",
+    forager: "🌿",
+    lumber: "🪓",
+    quarry: "⛏️",
+    story_fire: "🎶",
+    hunter_lodge: "🏹",
+    pasture: "🐄",
+    farm: "🌾",
+    granary: "🧺",
+    woodshed: "🪵",
+    stoneyard: "🪨",
+    depot: "📦",
+    mine: "⚒️",
+    smithy: "🔨",
+    market: "🏪",
+    stone_house: "🏠",
+    palisade: "🚧",
+    barracks: "⚔",
+    armory: "🛡",
+    treasury: "💰",
+    port: "⚓",
+    aqueduct: "🌉",
+    temple: "⛩",
+    clinic: "⚕️",
+    amphitheater: "🎭",
+    academy: "🏛️",
+    castle: "🏰",
+    university: "🎓",
+    mill: "🌀",
+    guild_hall: "🧰",
+    bank: "🏦",
+    stone_walls: "🧱",
+    press: "🖨️",
+    observatory: "🔭",
+    shipyard: "⛵",
+    foundry: "🔩",
+    workshop: "🧵",
+    train_station: "🚂",
+    factory: "🏭",
+    sewers: "🚰",
+    stock_exchange: "📈",
+    power_plant: "⚡",
+    lab: "🧪",
+    apartment: "🏢",
+    media_tower: "📡",
+    hospital: "🏥",
+    airport: "✈️",
+    npp: "☢️",
+    datacenter: "💾",
+    solar: "🔆",
+    robo_factory: "🤖",
+    biolab: "🧬",
+    skyscraper: "🌆",
+    ai_core: "🧠",
+    fusion_reactor: "⚛️",
+    spaceport: "🚀",
+    spire: "🗼"
+  };
+  var ICON_FALLBACK = "🏗";
+  function iconOf(id) {
+    return ICONS[id] || ICON_FALLBACK;
+  }
+  function categoryOf(id) {
+    return CATEGORY_OF[id] || FALLBACK_CAT;
+  }
+  function categoriesOfBuildings(table) {
+    const out = {};
+    for (const c of CATEGORIES) out[c.key] = [];
+    for (const id of Object.keys(table || {})) out[categoryOf(id)].push(id);
+    return out;
+  }
+  var GEN = { food: "еды", wood: "дерева", stone: "камня", steel: "стали", gold: "золота", knowledge: "знаний" };
+  function meta(r) {
+    return RES.find((q) => q.id === r);
+  }
+  var ERA_OF_TECH = (() => {
+    const m = {};
+    let e = 0;
+    for (const t of TECHS) {
+      if (t.era) e++;
+      m[t.id] = e;
+    }
+    return m;
+  })();
+  function fmt3(v) {
+    return Number.isInteger(v) ? String(v) : String(+v.toFixed(1));
+  }
+  function effectLines(def) {
+    const L = [];
+    if (def.out) {
+      for (const [r, v] of Object.entries(def.out)) {
+        const m = meta(r);
+        L.push(`Даёт ${m && m.icon || r}${fmt3(v)} в день с рабочего`);
+      }
+      if (def.workers) L.push(`Рабочих мест: ${def.workers}`);
+    }
+    if (def.know) L.push(`Знания поселению: +${fmt3(def.know)} в день`);
+    if (def.housing) L.push(`Жильё для ${def.housing} жителей`);
+    if (def.happy) L.push(`Счастье: +${def.happy} всем`);
+    if (def.cap) L.push("Склад: " + Object.entries(def.cap).map(([r, v]) => `+${v} ${GEN[r] || r}`).join(", "));
+    if (def.defense) L.push(def.wall ? `Оборона +${def.defense} за сегмент стены` : `Оборона +${def.defense}`);
+    if (def.wall && !def.defense) L.push(`Прочность стены: ${def.wall}`);
+    if (def.medicine) L.push(`Болезни ×${fmt3(def.medicine)}`);
+    if (def.industry) L.push(`Промышленность ${def.industry >= 1 ? "+" : ""}${Math.round((def.industry - 1) * 100)}%`);
+    if (def.goldMult) L.push(`Всё золото ×${def.goldMult}`);
+    if (def.armyMult) L.push(`Сила армии ×${def.armyMult}`);
+    if (def.caravanMult) L.push(`Караваны ×${def.caravanMult}`);
+    if (def.birthMult) L.push(`Рождаемость ×${def.birthMult}`);
+    if (def.marketBoost) L.push(`Курсы рынка ×${def.marketBoost}`);
+    if (def.radiusBonus) L.push(`Радиусы эффектов +${def.radiusBonus}`);
+    if (def.consume) L.push("Тратит " + Object.entries(def.consume).map(([r, v]) => `${(meta(r) || {}).icon || r}${fmt3(v)}/день`).join(" "));
+    if (def.aura) L.push(`Аура: радиус ${def.aura.r}, множитель ×${fmt3(def.aura.gather || def.aura.farm)}`);
+    if (def.special === "train") L.push("Обучает бойцов за еду и золото");
+    if (def.special === "missions") L.push("Миссии: Луна и Марс");
+    if (def.special === "spire") L.push("Мегапроект: 5 стадий");
+    if (def.unique) L.push("Можно построить только один");
+    return L;
+  }
+  function priceBadges(cost, costMult) {
+    const m = costMult || 1;
+    const rows = Object.entries(cost || {});
+    if (!rows.length) return [{ icon: "", ru: "Бесплатно", n: "" }];
+    return rows.map(([r, v]) => {
+      const md = meta(r);
+      return { icon: md && md.icon || r, ru: md && md.ru || r, n: Math.ceil(v * m) };
+    });
+  }
+  function lackStr(cost, res, m) {
+    const parts = [];
+    for (const [r, v] of Object.entries(cost || {})) {
+      const need = Math.ceil(v * m);
+      const have = Math.floor(res && res[r] || 0);
+      if (have < need) {
+        const md = meta(r);
+        parts.push(`${md && md.icon || r}${need - have}`);
+      }
+    }
+    return parts.length ? parts.join(" ") : null;
+  }
+  function cardModel(id, def, ctx) {
+    const c = ctx || {};
+    const techs = c.techs || { has: () => false };
+    const alive2 = c.uniqueAlive || { has: () => false };
+    const locked = !!(def.req && !techs.has(def.req));
+    const built = !!(def.unique && alive2.has(id));
+    const lack = lackStr(def.cost, c.res, c.costMult || 1);
+    let reason = "";
+    if (locked) {
+      const t = TECHS.find((q) => q.id === def.req);
+      reason = `Нужна технология: ${t ? t.name : def.req}`;
+    } else if (built) reason = "Уже построено";
+    else if (lack) reason = `Не хватает: ${lack}`;
+    const eraIdx = def.req ? ERA_OF_TECH[def.req] ?? 0 : 0;
+    return {
+      id,
+      name: def.name,
+      icon: iconOf(id),
+      eraRu: (ERAS[eraIdx] || {}).ru || "",
+      price: priceBadges(def.cost, c.costMult),
+      out: effectLines(def),
+      desc: def.desc || "",
+      disabled: locked || built || !!lack,
+      // Дорогую, но открытую технологией плитку нажать можно: призрак ставится,
+      // деньги спросят при подтверждении — так же ведёт родная вкладка.
+      clickable: !locked && !built,
+      reason
+    };
+  }
+  function tileCostStr(price) {
+    if (price.length === 1 && price[0].n === "") return "∞";
+    return price.map((b) => `${b.icon}${b.n}`).join("");
+  }
+  function tileHtml(m, selected) {
+    const cls = "ft-tile" + (m.disabled ? " ft-tile-off" : "") + (selected ? " ft-tile-sel" : "");
+    return `<button type="button" class="${cls}"${m.clickable ? ` data-ft-build="${m.id}"` : ""} data-ft-id="${m.id}" aria-label="${m.name}"><span class="ft-tile-ic" aria-hidden="true">${m.icon}</span><span class="ft-tile-cost" aria-hidden="true">${tileCostStr(m.price)}</span></button>`;
+  }
+  function tilesHtml(ids, ctx, placingId) {
+    return (ids || []).map((id) => {
+      const def = BUILDINGS[id];
+      return def ? tileHtml(cardModel(id, def, ctx), !!placingId && placingId === id) : "";
+    }).join("");
+  }
+  function tipHtml(m) {
+    const free = m.price.length === 1 && m.price[0].n === "";
+    const price = free ? '<div class="ft-tip-free">Бесплатно</div>' : m.price.map((b) => `<div class="ft-tip-row"><span>${b.icon}</span><span>${b.ru}</span><b>${b.n}</b></div>`).join("");
+    const outs = m.out.map((s) => `<div>${s}</div>`).join("");
+    return `<div class="ft-tip-name">${m.icon} ${m.name}<i>${m.eraRu}</i></div>` + (m.desc ? `<div class="ft-tip-desc">${m.desc}</div>` : "") + `<div class="ft-tip-price">${price}</div>` + (outs ? `<div class="ft-tip-out">${outs}</div>` : "") + (m.reason ? `<div class="ft-tip-reason">${m.reason}</div>` : "");
+  }
+  function catTipHtml(catKey, count2) {
+    const c = CATEGORIES.find((q) => q.key === catKey);
+    if (!c) return "";
+    return `<div class="ft-tip-name">${CATEGORY_ICONS[catKey] || ""} ${c.ru}</div><div class="ft-tip-dim">зданий: ${count2 | 0}</div>`;
+  }
+  function tabRailHtml(activeKey) {
+    return CATEGORIES.map((c) => `<button type="button" class="ft-bd-tab${c.key === activeKey ? " ft-bd-on" : ""}" data-ft-cat="${c.key}" aria-label="${c.ru}" title="">${CATEGORY_ICONS[c.key] || "?"}</button>`).join("");
+  }
+  function queueModel(simLike) {
+    const s = simLike || {};
+    const out = [];
+    const bs = Array.isArray(s.buildings) ? s.buildings : [];
+    for (const b of bs) {
+      if (!b || b.done || b.destroyed) continue;
+      const def = BUILDINGS[b.id];
+      if (!def) continue;
+      const bd = Math.max(0, Number(b.buildDays) || 0);
+      const pr = Math.max(0, Number(b.progress) || 0);
+      out.push({ kind: "site", id: b.id, icon: iconOf(b.id), name: def.name, frac: bd > 0 ? Math.min(1, pr / bd) : 0 });
+    }
+    const q = s.build && Array.isArray(s.build.queue) ? s.build.queue : [];
+    for (const p of q) {
+      if (!p || !BUILDINGS[p.id]) continue;
+      out.push({ kind: "plan", id: p.id, icon: iconOf(p.id), name: BUILDINGS[p.id].name, frac: 0 });
+    }
+    return out.slice(0, 14);
+  }
+  function queueRibbonHtml(rows) {
+    const list = rows || [];
+    if (!list.length) return "";
+    return list.map((r) => {
+      const pct = Math.round(Math.max(0, Math.min(1, Number(r.frac) || 0)) * 100);
+      return `<span class="ft-q${r.kind === "plan" ? " ft-q-plan" : ""}" data-ft-q="${r.id}" data-ft-qk="${r.kind}" data-ft-p="${pct}" role="img" aria-label="${r.name}, ${r.kind === "site" ? pct + "%" : "чертёж"}"><i style="height:${pct}%"></i><b aria-hidden="true">${r.icon}</b></span>`;
+    }).join("");
+  }
+  function queueTipHtml(row) {
+    if (!row) return "";
+    const pct = Math.round(Math.max(0, Math.min(1, Number(row.frac) || 0)) * 100);
+    if (row.kind === "plan") {
+      return `<div class="ft-tip-name">📐 ${row.icon} ${row.name}</div><div class="ft-tip-dim">Чертёж: ждёт материалов или очереди</div>`;
+    }
+    return `<div class="ft-tip-name">${row.icon} ${row.name}</div><div class="ft-tip-dim">Строится: ${pct}%</div><div class="ft-tip-dim">Готовность растут строители на площадке</div>`;
+  }
+  function drawerVisible(st) {
+    return !!st && st.tab === "build" && !st.closed && !!st.started && !st.covered;
   }
   function ensureCss() {
-    const already = [...document.querySelectorAll('link[rel="stylesheet"], style[id]')].some((l) => l.href && l.href.indexOf("menuskin.css") !== -1 || l.id === "msk-inline");
-    if (already) return;
-    let href = "";
+    if (document.getElementById("ft-bd-css")) return;
+    const st = document.createElement("style");
+    st.id = "ft-bd-css";
+    st.textContent = `
+#ftBDrawer {
+  position: fixed; left: 10px; top: 64px; bottom: 78px; width: 344px; z-index: 32;
+  display: flex; flex-direction: column;
+  /* Тёмный металл с фаской: световая кромка сверху, тень снизу. */
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.045), rgba(0,0,0,0.16)),
+    linear-gradient(180deg, #262319, #191712);
+  border: 1px solid #454033;
+  border-radius: var(--radius, 12px);
+  color: var(--text, #ece5d3);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.55),
+    0 12px 34px rgba(0, 0, 0, 0.55);
+  transform: translateX(-116%); opacity: 0; visibility: hidden; pointer-events: none;
+  transition: transform 0.22s ease, opacity 0.18s ease, visibility 0s linear 0.18s;
+}
+#ftBDrawer.open {
+  transform: none; opacity: 1; visibility: visible; pointer-events: auto;
+  transition: transform 0.22s ease, opacity 0.18s ease;
+}
+@media (prefers-reduced-motion: reduce) { #ftBDrawer { transition: none; } }
+.ft-bd-top {
+  display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+  font-family: var(--serif, Georgia, serif); letter-spacing: 0.5px; font-size: 13px;
+  border-bottom: 1px solid #14120c;
+  box-shadow: inset 0 -1px 0 rgba(255,255,255,0.04);
+}
+.ft-bd-x {
+  margin-left: auto; width: 26px; height: 26px; border-radius: 6px;
+  background: linear-gradient(180deg, #33302a, #24211b); color: var(--dim, #a89f8e);
+  border-color: #4c4636 #15130d #15130d #4c4636; border-style: solid; border-width: 1px;
+  cursor: pointer; font-size: 15px; line-height: 1;
+}
+.ft-bd-x:hover { color: #f0e6cd; filter: brightness(1.18); }
+/* Тело: узкая колонка табов слева + основная часть (сетка и лента). */
+.ft-bd-body { flex: 1; min-height: 0; display: flex; }
+.ft-bd-rail {
+  flex: 0 0 42px; display: flex; flex-direction: column; gap: 5px;
+  padding: 8px 5px;
+  background: linear-gradient(180deg, #211e17, #17150f);
+  border-right: 1px solid #14120c;
+  box-shadow: inset -1px 0 0 rgba(255,255,255,0.03);
+}
+.ft-bd-tab {
+  width: 32px; height: 32px; padding: 0; border-radius: 6px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; line-height: 1; color: var(--dim, #a89f8e);
+  background: linear-gradient(180deg, #332f26, #24211a);
+  border-style: solid; border-width: 1px;
+  border-color: #4c4636 #15130d #15130d #4c4636;
+}
+.ft-bd-tab:hover { color: var(--text, #ece5d3); filter: brightness(1.16); }
+.ft-bd-tab.ft-bd-on {
+  color: #201807;
+  background: linear-gradient(180deg, #d8b25c, #c8a24a 45%, #96762f);
+  border-color: #ecd08a #6b5526 #6b5526 #ecd08a;
+  box-shadow: 0 0 9px rgba(200, 162, 74, 0.4);
+}
+.ft-bd-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* Сетка квадратных плиток: ~4 в ряд на десктопной ширине, квадрат задаёт
+   aspect-ratio, размер плавает в коридоре 56–64px. */
+.ft-bd-grid {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 8px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+  gap: 7px; align-content: start;
+  scrollbar-width: thin; scrollbar-color: rgba(200,162,74,.35) transparent;
+}
+.ft-tile {
+  position: relative; aspect-ratio: 1 / 1; width: 100%; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  font: inherit; color: inherit; cursor: pointer; border-radius: 5px;
+  background: linear-gradient(165deg, #3b372c 0%, #2b2820 55%, #22201a 100%);
+  border-style: solid; border-width: 1px;
+  /* Фаска плитки: свет сверху-слева, тень снизу-справа — «фрезерованный» вид. */
+  border-color: #56503d #16140e #16140e #56503d;
+  transition: filter 0.12s ease, border-color 0.12s ease;
+}
+.ft-tile:hover { filter: brightness(1.16); }
+.ft-tile:focus-visible { outline: 2px solid #c8a24a; outline-offset: 1px; }
+.ft-tile-ic { font-size: 27px; line-height: 1; text-shadow: 0 2px 3px rgba(0,0,0,0.65); }
+/* Стоимость — маленький бейдж в правом нижнем углу, моно 10px. */
+.ft-tile-cost {
+  position: absolute; right: 2px; bottom: 2px;
+  max-width: calc(100% - 4px); overflow: hidden; white-space: nowrap;
+  text-overflow: ellipsis; padding: 0 3px; border-radius: 3px;
+  font-family: var(--mono, Consolas, monospace); font-size: 10px; line-height: 1.2;
+  color: #ead9ae; background: rgba(9, 8, 5, 0.74);
+  border: 1px solid rgba(200, 162, 74, 0.22);
+}
+/* Недоступно: затемнение + красный уголок-треугольник сверху справа. */
+.ft-tile-off { opacity: 0.42; filter: saturate(0.35); }
+.ft-tile-off .ft-tile-ic { filter: grayscale(0.5); }
+.ft-tile-off::after {
+  content: ''; position: absolute; top: 0; right: 0;
+  border-top: 13px solid #a83a2a; border-left: 13px solid transparent;
+  border-top-right-radius: 4px;
+}
+.ft-tile-off:not([data-ft-build]) { cursor: default; }
+.ft-tile-off[data-ft-build]:hover { filter: brightness(1.1) saturate(0.35); }
+/* Выбранная при постановке: янтарная рамка с медленным пульсом. */
+.ft-tile-sel {
+  border-color: #c8a24a;
+  animation: ftTilePulse 0.95s ease-in-out infinite alternate;
+}
+@keyframes ftTilePulse {
+  from { box-shadow: 0 0 0 1px rgba(200,162,74,0.85), 0 0 5px rgba(200,162,74,0.25); }
+  to   { box-shadow: 0 0 0 2px #c8a24a, 0 0 15px rgba(200,162,74,0.6); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ft-tile-sel { animation: none; box-shadow: 0 0 0 2px #c8a24a; }
+}
+/* Лента очереди стройки: квадратики площадок и чертежей. */
+.ft-bd-queue {
+  flex: 0 0 auto; display: flex; gap: 5px; align-items: center;
+  min-height: 38px; padding: 5px 8px; overflow-x: auto;
+  background: linear-gradient(180deg, #1b1913, #15130e);
+  border-top: 1px solid #14120c;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+  scrollbar-width: thin; scrollbar-color: rgba(200,162,74,.35) transparent;
+}
+.ft-q {
+  position: relative; flex: 0 0 auto; width: 28px; height: 28px; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+  background: linear-gradient(180deg, #2c2921, #201d16);
+  border-style: solid; border-width: 1px;
+  border-color: #4c4636 #15130d #15130d #4c4636;
+}
+/* Прогресс-заливка снизу вверх: высоту задаёт инлайн-стиль из модели. */
+.ft-q i {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(180deg, #e3c06a, #c8a24a);
+}
+.ft-q b {
+  position: relative; font-weight: 400; font-size: 14px; line-height: 1;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.8));
+}
+/* Чертёж: ещё не стройка — штриховая рамка и штриховая заливка вместо янтаря. */
+.ft-q-plan { border-style: dashed; border-color: #8a7034; opacity: 0.85; }
+.ft-q-plan i { background: repeating-linear-gradient(45deg, transparent 0 3px, rgba(200,162,74,0.28) 3px 5px); }
+/* Ховер-тултип: один общий div рядом с курсором, не системный title. */
+#ftBdTip {
+  position: fixed; z-index: 80; max-width: 236px; padding: 7px 9px;
+  border-radius: 8px; pointer-events: none; opacity: 0;
+  transition: opacity 0.09s ease;
+  font-size: 11px; line-height: 1.45; color: var(--text, #ece5d3);
+  background: linear-gradient(180deg, #2c2921, #1d1b14);
+  border: 1px solid rgba(200, 162, 74, 0.5);
+  box-shadow: 0 10px 26px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+#ftBdTip.show { opacity: 1; }
+.ft-tip-name { font-weight: 600; margin-bottom: 2px; }
+.ft-tip-name i {
+  font-style: normal; margin-left: 6px;
+  font-family: var(--mono, Consolas, monospace); font-size: 8.5px; color: var(--dim, #a89f8e);
+}
+.ft-tip-desc { color: var(--dim, #a89f8e); font-size: 10px; margin-bottom: 2px; }
+.ft-tip-price {
+  display: flex; flex-direction: column; gap: 1px; margin: 3px 0; padding: 3px 0;
+  border-top: 1px solid var(--gold-faint, rgba(201,162,39,0.14));
+  border-bottom: 1px solid var(--gold-faint, rgba(201,162,39,0.14));
+}
+.ft-tip-row { display: flex; gap: 5px; font-family: var(--mono, Consolas, monospace); font-size: 10.5px; }
+.ft-tip-row b { margin-left: auto; font-family: inherit; }
+.ft-tip-free { font-family: var(--mono, Consolas, monospace); font-size: 10.5px; }
+.ft-tip-out { font-size: 10.5px; }
+.ft-tip-reason { margin-top: 3px; color: var(--warn, #e8c886); }
+.ft-tip-dim { color: var(--dim, #a89f8e); font-size: 10.5px; }
+@media (max-width: 820px) {
+  /* Телефон: нижний лист поверх интерфейса; колонка табов остаётся слева —
+     42px ширины лист не съедает, а привычка «табы слева» единая. */
+  #ftBDrawer { left: 8px; right: 8px; width: auto; top: auto;
+    bottom: calc(8px + var(--safe-bottom, 0px)); height: 47vh;
+    transform: translateY(112%); }
+  #ftBDrawer.open { transform: none; }
+}`;
+    document.head.appendChild(st);
+  }
+  function ctxFromSim(sim2) {
+    if (!sim2) return {};
+    return {
+      techs: sim2.techs,
+      res: sim2.res,
+      costMult: typeof sim2.costMult === "function" ? sim2.costMult() : 1,
+      uniqueAlive: new Set((sim2.buildings || []).filter((b) => !b.destroyed).map((b) => b.id))
+    };
+  }
+  var state = { cat: "home", closed: false, lastGrid: "", lastQueue: "" };
+  function phoneLayout() {
     try {
-      href = new URL("menuskin.css", import_meta.url).href;
+      return window.matchMedia("(max-width: 820px)").matches;
     } catch {
-      return;
-    }
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = href;
-    document.head.appendChild(link);
-  }
-  var DESKTOP_GROUPS = [
-    { tabs: ["build", "research", "people"] },
-    { cap: "Экономика", tabs: ["market", "industry", "labor"] },
-    { cap: "Война", tabs: ["army", "war"] },
-    { cap: "Прочее", tabs: ["diplo", "politics", "empire", "goals", "memory", "log"] }
-  ];
-  function iconize(button) {
-    if (!button || button.dataset.mskIc) return;
-    button.dataset.mskIc = "1";
-    const id = button.dataset.tab;
-    if (!id || !ICONS[id]) return;
-    const ic = button.querySelector(".ic");
-    if (ic) {
-      ic.classList.add("msk-tic");
-      ic.innerHTML = svg(id);
-    } else {
-      const s = document.createElement("span");
-      s.className = "msk-tic";
-      s.setAttribute("aria-hidden", "true");
-      s.innerHTML = svg(id);
-      button.insertBefore(s, button.firstChild);
+      return false;
     }
   }
-  function decorateTabs() {
-    const sp = document.getElementById("sidePanel");
-    const sh = document.getElementById("sheet");
-    if (sp) sp.classList.add("msk-root");
-    if (sh) sh.classList.add("msk-root");
-    const st = document.getElementById("sideTabs");
-    const sht = document.getElementById("sheetTabs");
-    if (st && !st.dataset.msk && st.children.length) {
-      st.dataset.msk = "1";
-      const byTab = {};
-      for (const b of [...st.children]) if (b.dataset && b.dataset.tab) byTab[b.dataset.tab] = b;
-      const grouped = new Set(DESKTOP_GROUPS.flatMap((g2) => g2.tabs));
-      const last2 = DESKTOP_GROUPS[DESKTOP_GROUPS.length - 1];
-      for (const t of Object.keys(byTab)) if (!grouped.has(t) && !last2.tabs.includes(t)) last2.tabs.push(t);
-      const frag = document.createDocumentFragment();
-      for (const g2 of DESKTOP_GROUPS) {
-        if (g2.cap) {
-          const sep = document.createElement("div");
-          sep.className = "msk-sep";
-          sep.setAttribute("aria-hidden", "true");
-          const span = document.createElement("span");
-          span.textContent = g2.cap;
-          sep.appendChild(span);
-          frag.appendChild(sep);
-        }
-        for (const t of g2.tabs) if (byTab[t]) frag.appendChild(byTab[t]);
+  function shellHtml() {
+    return `<div class="ft-bd-top"><span class="ft-bd-title">🏗 Строительство</span><button type="button" class="ft-bd-x" data-ft-close aria-label="Свернуть палитру">×</button></div><div class="ft-bd-body"><div class="ft-bd-rail"></div><div class="ft-bd-main"><div class="ft-bd-grid"></div><div class="ft-bd-queue" hidden></div></div></div>`;
+  }
+  var tipEl = null;
+  function ensureTip() {
+    if (tipEl && document.body.contains(tipEl)) return tipEl;
+    tipEl = document.createElement("div");
+    tipEl.id = "ftBdTip";
+    tipEl.setAttribute("role", "tooltip");
+    document.body.appendChild(tipEl);
+    return tipEl;
+  }
+  function hideTip() {
+    if (tipEl) tipEl.classList.remove("show");
+  }
+  function showTip(el, html) {
+    if (!html) return hideTip();
+    const t = ensureTip();
+    t.innerHTML = html;
+    t.classList.add("show");
+    const r = el.getBoundingClientRect();
+    const vw = window.innerWidth, vh = window.innerHeight;
+    let x = r.right + 8;
+    if (x + t.offsetWidth > vw - 8) x = Math.max(8, r.left - t.offsetWidth - 8);
+    let y = Math.min(Math.max(8, r.top - 6), vh - t.offsetHeight - 8);
+    t.style.left = `${x}px`;
+    t.style.top = `${y}px`;
+  }
+  function tipFor(el) {
+    const d = el.dataset;
+    const F = window.__frontier || {};
+    if (d.ftQ !== void 0) {
+      return queueTipHtml({ kind: d.ftQk, id: d.ftQ, frac: (Number(d.ftP) || 0) / 100 });
+    }
+    if (d.ftCat) {
+      const n = (categoriesOfBuildings(BUILDINGS)[d.ftCat] || []).length;
+      return catTipHtml(d.ftCat, n);
+    }
+    const def = BUILDINGS[d.ftId];
+    return def ? tipHtml(cardModel(d.ftId, def, ctxFromSim(F.sim))) : "";
+  }
+  function bindTips(root2) {
+    const SEL = "[data-ft-cat],[data-ft-id],[data-ft-q]";
+    let outTimer = 0;
+    root2.addEventListener("mouseover", (e) => {
+      const el = e.target && e.target.closest ? e.target.closest(SEL) : null;
+      if (!el || !root2.contains(el)) return;
+      clearTimeout(outTimer);
+      showTip(el, tipFor(el));
+    });
+    const soonHide = () => {
+      clearTimeout(outTimer);
+      outTimer = setTimeout(hideTip, 60);
+    };
+    root2.addEventListener("mouseleave", soonHide);
+    root2.addEventListener("focusout", soonHide);
+    root2.addEventListener("focusin", (e) => {
+      const el = e.target && e.target.closest ? e.target.closest(SEL) : null;
+      if (el) showTip(el, tipFor(el));
+    });
+    root2.addEventListener("scroll", hideTip, true);
+    window.addEventListener("blur", hideTip);
+    let lp = null;
+    root2.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "mouse") return;
+      const el = e.target && e.target.closest ? e.target.closest(SEL) : null;
+      if (!el) return;
+      lp = { el, x: e.clientX, y: e.clientY, t: setTimeout(() => showTip(el, tipFor(el)), 450) };
+    });
+    root2.addEventListener("pointermove", (e) => {
+      if (lp && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 12) {
+        clearTimeout(lp.t);
+        lp = null;
+        hideTip();
       }
-      st.appendChild(frag);
-    }
-    if (sht && !sht.dataset.msk && sht.children.length) sht.dataset.msk = "1";
-    for (const host of [st, sht]) {
-      if (!host) continue;
-      for (const b of host.children) iconize(b);
-    }
+    });
+    const lpEnd = () => {
+      if (lp) {
+        clearTimeout(lp.t);
+        lp = null;
+      }
+    };
+    root2.addEventListener("pointerup", lpEnd);
+    root2.addEventListener("pointercancel", lpEnd);
   }
-  var RES_META4 = {
-    "🍞": ["food", "Еда"],
-    "🪵": ["wood", "Дерево"],
-    "🪨": ["stone", "Камень"],
-    "⚙": ["steel", "Сталь"],
-    "🪙": ["gold", "Золото"],
-    "📜": ["knowledge", "Знания"]
-  };
-  var COST_RE = /([🍞🪵🪨⚙🪙📜])\s*(\d+(?:\.\d+)?)(?:\s*\/\s*(\d+))?|(\d+(?:\.\d+)?)\s*([🍞🪵🪨⚙🪙📜])/gu;
-  function buildChip(resId, resName, num16, denom) {
-    const chip = document.createElement("span");
-    chip.className = `msk-res msk-${resId}`;
-    chip.title = resName;
-    const dot = document.createElement("i");
-    dot.setAttribute("aria-hidden", "true");
-    chip.appendChild(dot);
-    chip.appendChild(document.createTextNode(num16 + (denom ? "/" + denom : "")));
-    return chip;
-  }
-  function decorateCost(rootEl) {
-    if (!rootEl || !rootEl.querySelectorAll) return;
-    for (const el of rootEl.querySelectorAll(".cost:not([data-mskc])")) {
+  function bindClicks(root2) {
+    root2.addEventListener("click", (e) => {
+      const t = e.target.closest && e.target.closest("[data-ft-cat],[data-ft-close],[data-ft-build]");
+      if (!t) return;
+      if ("ftClose" in t.dataset) {
+        state.closed = true;
+        root2.classList.remove("open");
+        hideTip();
+        return;
+      }
+      if (t.dataset.ftCat) {
+        state.cat = t.dataset.ftCat;
+        state.lastGrid = "";
+        render(root2);
+        return;
+      }
+      const id = t.dataset.ftBuild;
+      const F = window.__frontier;
+      if (!F || !F.hud || !F.hud.cb || typeof F.hud.cb.startPlacing !== "function") return;
       try {
-        el.dataset.mskc = "1";
-        const raw = el.textContent.replace(/\uFE0F/g, "");
-        COST_RE.lastIndex = 0;
-        const parts = [];
-        let m, last2 = 0, found = false;
-        while ((m = COST_RE.exec(raw)) !== null) {
-          found = true;
-          if (m.index > last2) parts.push(document.createTextNode(raw.slice(last2, m.index)));
-          if (m[1]) {
-            const [rid, rname] = RES_META4[m[1]];
-            parts.push(buildChip(rid, rname, m[2], m[3]));
-          } else {
-            const [rid, rname] = RES_META4[m[5]];
-            parts.push(buildChip(rid, rname, m[4], null));
-          }
-          last2 = COST_RE.lastIndex;
-        }
-        if (!found) continue;
-        if (last2 < raw.length) parts.push(document.createTextNode(raw.slice(last2)));
-        el.textContent = "";
-        for (const p of parts) el.appendChild(p);
+        if (F.audio) F.audio.play("click");
       } catch {
       }
-    }
+      F.hud.cb.startPlacing(id);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      const F = window.__frontier;
+      if (F && F.sim && F.sim.placing) return;
+      if (root2.classList.contains("open")) {
+        state.closed = true;
+        root2.classList.remove("open");
+        hideTip();
+      }
+    });
   }
-  function decoratePanels(sc, shc) {
-    try {
-      decorateCost(sc);
-    } catch {
+  function render(root2) {
+    const F = window.__frontier || {};
+    const hud2 = F.hud, sim2 = F.sim;
+    const ov = document.getElementById("overlay");
+    const started = !ov || ov.classList.contains("hidden");
+    const vis = drawerVisible({
+      tab: hud2 ? hud2.tab : "",
+      closed: state.closed,
+      started,
+      covered: !!(sim2 && sim2.placing) && phoneLayout()
+    });
+    if (hud2 && hud2.tab !== "build") state.closed = false;
+    root2.classList.toggle("open", vis);
+    if (!vis) {
+      hideTip();
+      return;
     }
-    try {
-      decorateCost(shc);
-    } catch {
+    const ids = categoriesOfBuildings(BUILDINGS)[state.cat] || [];
+    const placingId = sim2 && sim2.placing ? String(sim2.placing.id) : null;
+    const grid = `<div class="ft-bd-grid">${tilesHtml(ids, ctxFromSim(sim2), placingId)}</div>`;
+    if (grid !== state.lastGrid) {
+      state.lastGrid = grid;
+      const el = root2.querySelector(".ft-bd-grid");
+      if (el) el.outerHTML = grid;
+      hideTip();
     }
+    const rib = queueRibbonHtml(queueModel(sim2));
+    if (rib !== state.lastQueue) {
+      state.lastQueue = rib;
+      const box2 = root2.querySelector(".ft-bd-queue");
+      if (box2) {
+        box2.innerHTML = rib;
+        box2.hidden = !rib;
+      }
+    }
+    for (const b of root2.querySelectorAll("[data-ft-cat]"))
+      b.classList.toggle("ft-bd-on", b.dataset.ftCat === state.cat);
   }
   function start() {
     ensureCss();
-    const sc = document.getElementById("sideContent");
-    const shc = document.getElementById("sheetContent");
-    decorateTabs();
-    decoratePanels(sc, shc);
-    if (window.MutationObserver && sc && shc) {
-      const mo = new MutationObserver(() => decoratePanels(sc, shc));
-      mo.observe(sc, { childList: true, subtree: true });
-      mo.observe(shc, { childList: true, subtree: true });
-      for (const host of ["sideTabs", "sheetTabs"]) {
-        const el = document.getElementById(host);
-        if (el) {
-          const tmo = new MutationObserver(() => {
-            requestAnimationFrame(() => {
-              try {
-                decorateTabs();
-              } catch {
-              }
-            });
-          });
-          tmo.observe(el, { childList: true });
-        }
-      }
+    let root2 = document.getElementById("ftBDrawer");
+    if (!root2) {
+      root2 = document.createElement("aside");
+      root2.id = "ftBDrawer";
+      root2.setAttribute("aria-label", "Палитра строительства");
+      root2.innerHTML = shellHtml();
+      document.body.appendChild(root2);
+      root2.querySelector(".ft-bd-rail").innerHTML = tabRailHtml(state.cat);
+      bindClicks(root2);
+      bindTips(root2);
     }
-    let lastSim;
     setInterval(() => {
       try {
-        const F = window.__frontier;
-        if (F && F.sim !== lastSim) {
-          lastSim = F.sim;
-          decoratePanels(sc, shc);
-        }
-        decorateTabs();
+        render(root2);
       } catch {
       }
-    }, 2e3);
+    }, 250);
   }
-  function boot(attempt) {
-    attempt = attempt || 0;
-    const ok2 = document.getElementById("sideTabs") && document.getElementById("sideTabs").querySelectorAll("button[data-tab]").length > 0;
-    if (ok2 || attempt > 100) start();
-    else setTimeout(() => boot(attempt + 1), 100);
-  }
-  if (!window.__frontierMenuSkin) {
-    window.__frontierMenuSkin = { version: 1 };
-    boot();
+  if (typeof document !== "undefined" && typeof window !== "undefined" && !window.__frontierBuildingDrawer) {
+    window.__frontierBuildingDrawer = { version: 2, palette: true };
+    start();
   }
 
   // app/src/ui/hud.js
@@ -35767,6 +36271,225 @@ ${s}`, "console");
     { id: "memory", ru: "Летопись", ic: "📜" },
     { id: "log", ru: "Журнал", ic: "📖" }
   ];
+  var TAB_GROUPS = [
+    { cap: "", tabs: ["build", "research", "people", "dynasty"] },
+    { cap: "Экономика", tabs: ["market", "industry", "labor"] },
+    { cap: "Война", tabs: ["army", "war"] },
+    { cap: "Прочее", tabs: ["diplo", "politics", "empire", "goals", "memory", "log"] }
+  ];
+  var GNS_CSS = `
+/* ===== ПАНЕЛЬ-ШТАБ: тёмный графитово-зелёный металл ===== */
+/* Фаска 1px имитируется двумя внутренними тенями: светлая сверху/слева,
+   тёмная снизу/справа — так «металл» читается даже без картинок (офлайн). */
+#sidePanel {
+  background:
+    repeating-linear-gradient(135deg, rgba(255,255,255,.016) 0 1px, transparent 1px 5px),
+    linear-gradient(180deg, #20241d, #181b15 55%, #12140f);
+  border: 1px solid #000;
+  border-radius: 0;
+  box-shadow: inset 1px 1px 0 #414a37, inset -1px -1px 0 #050603, 0 10px 30px rgba(0,0,0,.55);
+}
+/* янтарная командная кромка — единственный «драгоценный» акцент панели */
+#sidePanel::after {
+  content: ''; position: absolute; left: 0; top: 0; right: 0; height: 2px; z-index: 2;
+  background: linear-gradient(90deg, #6b5626, #c8a24a 30%, #eecb76 50%, #c8a24a 70%, #6b5626);
+  pointer-events: none;
+}
+
+/* ===== ПЕРЕКЛЮЧАТЕЛЬ ВКЛАДОК: сетка квадратных кнопок-иконок ===== */
+#sidePanel #sideTabs {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px;
+  padding: 5px 5px 4px;
+  background:
+    repeating-linear-gradient(135deg, rgba(0,0,0,.14) 0 1px, transparent 1px 4px),
+    linear-gradient(180deg, #101309, #15180f);
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 1px 0 #39402f, 0 1px 0 rgba(200,162,74,.28);
+}
+/* группы ЭКОНОМИКА/ВОЙНА/ПРОЧЕЕ — тонкие подписи-линии на всю сетку */
+#sidePanel .gns-sep {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: 6px;
+  margin: 3px 1px 2px;
+  pointer-events: none; user-select: none;
+}
+#sidePanel .gns-sep::before, #sidePanel .gns-sep::after {
+  content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg, rgba(200,162,74,.06), rgba(200,162,74,.42));
+}
+#sidePanel .gns-sep::after { background: linear-gradient(90deg, rgba(200,162,74,.42), rgba(200,162,74,.06)); }
+#sidePanel .gns-sep span {
+  font-size: 9px; font-weight: 700; letter-spacing: 1.8px; text-transform: uppercase;
+  color: #ab8c49; white-space: nowrap;
+}
+/* сама кнопка: квадрат ~48px, эмодзи-иконка + подпись капсом под ней.
+   Подпись 8.5px, а не 9px: «ДИПЛОМАТИЯ» при 9px не влезает в ячейку 57px
+   и обрезалась многоточием — проверено на скриншоте первой итерации. */
+#sidePanel #sideTabs button.gns-tab {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-width: 0; min-height: 48px; padding: 4px 1px 3px;
+  background: linear-gradient(180deg, #272c22, #1d211a);
+  border: 1px solid #000; border-radius: 0;
+  box-shadow: inset 1px 1px 0 #3d4434, inset -1px -1px 0 #0a0c07;
+  color: #a7af99; font-size: 8px; font-weight: 700; line-height: 1.05;
+  letter-spacing: .1px; text-transform: uppercase;
+}
+#sidePanel #sideTabs .gns-tab .ic { font-size: 16px; line-height: 1; filter: saturate(.8); text-shadow: 0 1px 0 #000; }
+#sidePanel #sideTabs .gns-tab .lbl {
+  /* длинные слова («Дипломатия») не режем многоточием: сначала даём надписи
+     БОЛЬШЕ места в раскладке (108%), затем сжимаем отрисовку scaleX(.92) —
+     глифы становятся «приборочно» узкими, но читаются целиком */
+  width: 108%; margin-left: -4%;
+  transform: scaleX(.92); transform-origin: 50% 50%;
+  white-space: nowrap;
+}
+#sidePanel #sideTabs button.gns-tab:hover {
+  color: #e8e4d1; background: linear-gradient(180deg, #343b2d, #272c22);
+  box-shadow: inset 1px 1px 0 #4d5740, inset -1px -1px 0 #0a0c07;
+}
+/* активная — янтарная заливка со свечением и тёмным текстом: читается с любого
+   конца комнаты, как выбранная кнопка боевого интерфейса */
+#sidePanel #sideTabs button.gns-tab.active {
+  color: #191307;
+  background: linear-gradient(180deg, #eecb76, #c8a24a 48%, #a9842f);
+  border-color: #5c4715;
+  box-shadow: inset 0 0 0 1px #f4dc9a, inset 0 1px 0 rgba(255,255,255,.55), 0 0 12px rgba(232,194,104,.38);
+  text-shadow: 0 1px 0 rgba(255,255,255,.28);
+}
+#sidePanel #sideTabs button.gns-tab.active .ic { filter: none; }
+
+/* ===== СОДЕРЖИМОЕ: плотные военные секции вместо карточек-блогов ===== */
+#sidePanel #sideContent { padding: 7px 7px 12px; }
+#sideContent h4.group, #sheetContent h4.group {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+  color: #c8a24a; margin: 11px 1px 5px; padding: 0 0 4px;
+  border-bottom: 1px solid rgba(200,162,74,.38);
+}
+#sideContent h4.group::before {
+  content: ''; display: inline-block; width: 4px; height: 9px; margin-right: 7px;
+  background: #c8a24a; box-shadow: 1px 1px 0 #000;
+}
+/* секция: прямоугольная пластина с фасками, БЕЗ скруглений и теней-подвесов */
+#sideContent .card, #sheetContent .card {
+  background: linear-gradient(180deg, #242920, #1b1f18);
+  border: 1px solid #000; border-radius: 0;
+  box-shadow: inset 1px 1px 0 #39412f, inset -1px -1px 0 #0a0c07;
+  padding: 7px 9px; margin-bottom: 4px;
+}
+#sideContent .card:hover {
+  outline: 1px solid rgba(200,162,74,.45); outline-offset: -1px;
+  background: linear-gradient(180deg, #2b3125, #21261d);
+}
+#sideContent .card .ttl, #sheetContent .card .ttl { font-size: 12px; font-weight: 700; letter-spacing: .2px; align-items: baseline; gap: 8px; }
+#sideContent .card .ttl span, #sheetContent .card .ttl span { color: #ddd8c4; }
+#sideContent .card .cost, #sheetContent .card .cost { font-family: var(--mono); color: #d9b566; font-size: 10.5px; max-width: 62%; justify-content: flex-end; }
+#sideContent .card .desc, #sheetContent .card .desc { color: #96a08a; font-size: 10.5px; line-height: 1.35; margin-top: 2px; }
+#sideContent .card .reason, #sheetContent .card .reason { color: #ef9090; font-size: 10.5px; margin-top: 2px; }
+#sideContent .card.disabled, #sheetContent .card.disabled { opacity: .5; filter: saturate(.5); }
+
+/* строки «ключ — значение»: цифры справа моноширинным янтарным столбиком */
+#sideContent .kv, #sheetContent .kv {
+  padding: 3px 1px; font-size: 11.5px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+#sideContent .kv span:last-child, #sheetContent .kv span:last-child { color: #e0ba67; }
+
+/* ===== КОМПАКТНЫЙ РЯД СТРОЙКИ: иконка слева, цена справа, НЕ карточка ===== */
+.gns-row { display: flex; gap: 8px; align-items: flex-start; }
+.gns-row .gns-bic {
+  flex: none; width: 24px; height: 24px; margin-top: 1px;
+  display: flex; align-items: center; justify-content: center; font-size: 13px;
+  background: linear-gradient(180deg, #141810, #1d211a);
+  border: 1px solid #000;
+  box-shadow: inset 1px 1px 0 #39412f, inset -1px -1px 0 #050603;
+}
+.gns-row .gns-mid { flex: 1; min-width: 0; }
+.gns-row .desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.gns-row .cost { flex: none; margin-left: auto; max-width: 46%; text-align: right; white-space: normal; }
+
+/* ===== КНОПКИ: прямоугольные, фаска вместо скругления ===== */
+.btn {
+  border-radius: 0; letter-spacing: .4px;
+  background: linear-gradient(180deg, #2e352a, #22271e);
+  border: 1px solid #000;
+  box-shadow: inset 1px 1px 0 #414a36, inset -1px -1px 0 #0a0c07;
+}
+.btn:not(:disabled):hover {
+  transform: none;
+  background: linear-gradient(180deg, #394130, #282e23);
+  box-shadow: inset 1px 1px 0 #4d5740, inset -1px -1px 0 #0a0c07;
+}
+.btn:not(:disabled):active { transform: none; box-shadow: inset 0 2px 6px rgba(0,0,0,.55); }
+.btn.primary {
+  background: linear-gradient(180deg, #eecb76, #c8a24a 52%, #ab8631);
+  color: #181205; border: 1px solid #6b531a; border-radius: 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5), inset 0 -1px 0 rgba(0,0,0,.25);
+  text-shadow: 0 1px 0 rgba(255,255,255,.2);
+}
+.btn.danger {
+  background: linear-gradient(180deg, #33201c, #241713);
+  border: 1px solid #8f3a2c; color: #ef9a8c; border-radius: 0;
+  box-shadow: inset 1px 1px 0 #54291f, inset -1px -1px 0 #120a08;
+}
+
+/* полоса отношений и цели — под ту же палитру */
+#sideContent .relbar, #sheetContent .relbar { height: 6px; border-radius: 0; background: #101309; border: 1px solid #000; }
+#sideContent .obj, #sheetContent .obj { padding: 5px 3px; font-size: 11.5px; }
+
+/* ===== УЗКИЙ ТЁМНЫЙ СКРОЛЛБАР ===== */
+#sidePanel #sideContent {
+  scrollbar-width: thin; scrollbar-color: #39412f #101309;
+}
+#sidePanel #sideContent::-webkit-scrollbar { width: 10px; }
+#sidePanel #sideContent::-webkit-scrollbar-track { background: #101309; border-left: 1px solid #000; }
+#sidePanel #sideContent::-webkit-scrollbar-thumb {
+  background: #333b2a; border: 1px solid #000;
+  box-shadow: inset 1px 1px 0 #4a543c;
+}
+#sidePanel #sideContent::-webkit-scrollbar-thumb:hover { background: #46513a; }
+
+/* ===== НИЖНИЙ ШИТ (≤820px): тот же металл, лента квадратных вкладок ===== */
+#sheet {
+  background:
+    repeating-linear-gradient(135deg, rgba(255,255,255,.016) 0 1px, transparent 1px 5px),
+    linear-gradient(180deg, #20241d, #161912);
+  border-top: 2px solid #c8a24a; border-radius: 0;
+  box-shadow: 0 -10px 30px rgba(0,0,0,.55);
+}
+#sheet #sheetHandle::before { border-radius: 0; background: #c8a24a; opacity: .8; }
+#sheet #sheetTabs {
+  gap: 2px; padding: 4px 4px calc(4px + var(--safe-bottom, 0px));
+  background: linear-gradient(180deg, #101309, #15180f);
+  border-top: 1px solid #000; box-shadow: inset 0 1px 0 #39402f;
+}
+#sheet #sheetTabs button {
+  flex: 1 0 52px; min-height: 46px; padding: 4px 2px calc(4px + var(--safe-bottom, 0px));
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  background: linear-gradient(180deg, #272c22, #1d211a);
+  border: 1px solid #000; border-radius: 0;
+  box-shadow: inset 1px 1px 0 #3d4434, inset -1px -1px 0 #0a0c07;
+  color: #a7af99; font-size: 9px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase;
+}
+#sheet #sheetTabs button .ic { font-size: 15px; filter: saturate(.8); }
+#sheet #sheetTabs button.active {
+  color: #191307; background: linear-gradient(180deg, #eecb76, #c8a24a 48%, #a9842f);
+  border-color: #5c4715;
+  box-shadow: inset 0 0 0 1px #f4dc9a, 0 0 10px rgba(232,194,104,.35);
+}
+#sheet #sheetContent { scrollbar-width: thin; scrollbar-color: #39412f #101309; }
+#sheet #sheetContent::-webkit-scrollbar { width: 10px; }
+#sheet #sheetContent::-webkit-scrollbar-thumb { background: #333b2a; border: 1px solid #000; }
+`;
+  function ensureGeneralsSkin() {
+    if (typeof document === "undefined") return;
+    if (document.getElementById("gns-skin")) return;
+    const st = document.createElement("style");
+    st.id = "gns-skin";
+    st.textContent = GNS_CSS;
+    document.head.appendChild(st);
+  }
+  ensureGeneralsSkin();
   var Hud = class {
     constructor(sim2, renderer2, saveSys2, audio2) {
       this.sim = sim2;
@@ -35839,15 +36562,33 @@ ${s}`, "console");
       this.cb = callbacks;
       this.el.sideTabs.innerHTML = "";
       this.el.sheetTabs.innerHTML = "";
+      const byId = {};
+      for (const t of TABS) byId[t.id] = t;
+      const grouped = new Set(TAB_GROUPS.flatMap((g2) => g2.tabs));
+      for (const t of TABS) if (!grouped.has(t.id)) TAB_GROUPS[TAB_GROUPS.length - 1].tabs.push(t.id);
+      for (const g2 of TAB_GROUPS) {
+        if (g2.cap) {
+          const sep = document.createElement("div");
+          sep.className = "gns-sep";
+          sep.setAttribute("aria-hidden", "true");
+          sep.innerHTML = `<span>${g2.cap}</span>`;
+          this.el.sideTabs.appendChild(sep);
+        }
+        for (const id of g2.tabs) {
+          const t = byId[id];
+          if (!t) continue;
+          const b = document.createElement("button");
+          b.className = "gns-tab";
+          b.dataset.tab = t.id;
+          b.innerHTML = `<span class="ic" aria-hidden="true">${t.ic}</span><span class="lbl">${t.ru}</span>`;
+          b.onclick = () => {
+            this.audio.play("click");
+            this.setTab(t.id);
+          };
+          this.el.sideTabs.appendChild(b);
+        }
+      }
       for (const t of TABS) {
-        const b1 = document.createElement("button");
-        b1.textContent = t.ru;
-        b1.dataset.tab = t.id;
-        b1.onclick = () => {
-          this.audio.play("click");
-          this.setTab(t.id);
-        };
-        this.el.sideTabs.appendChild(b1);
         const b2 = document.createElement("button");
         b2.innerHTML = `<span class="ic">${t.ic}</span>${t.ru}`;
         b2.dataset.tab = t.id;
@@ -36609,10 +37350,14 @@ ${out}`;
         else if (built) reason = "Уже построено";
         else if (lack) reason = `Не хватает: ${lack}${this.etaFor(def.cost)}`;
         const dis = locked || built || lack;
-        html += `<div class="card ${dis ? "disabled" : ""}" data-tipk="b:${id}" ${!locked && !built ? `data-build="${id}"` : ""}>
-        <div class="ttl"><span>${def.name}</span><span class="cost">${this.costStr(def.cost)}</span></div>
-        <div class="desc">${def.desc}</div>
-        ${reason ? `<div class="reason">${reason}</div>` : ""}
+        html += `<div class="card gns-row ${dis ? "disabled" : ""}" data-tipk="b:${id}" ${!locked && !built ? `data-build="${id}"` : ""}>
+        <span class="gns-bic" aria-hidden="true">${iconOf(id)}</span>
+        <div class="gns-mid">
+          <div class="ttl"><span>${def.name}</span></div>
+          <div class="desc">${def.desc}</div>
+          ${reason ? `<div class="reason">${reason}</div>` : ""}
+        </div>
+        <span class="cost">${this.costStr(def.cost)}</span>
       </div>`;
       }
       const wpnl = wonderPanel(s);
@@ -38885,14 +39630,30 @@ ${out}`;
 
   // app/src/ui/dock.js
   var DOCK_BUTTONS = [
-    { key: "build", icon: "🔨", ru: "Строительство", tab: "build" },
-    { key: "dynasty", icon: "👑", ru: "Династия", tab: "dynasty" },
-    { key: "army", icon: "⚔", ru: "Войско", tab: "army" },
-    { key: "science", icon: "📜", ru: "Наука", tab: "research" },
-    { key: "laws", icon: "⚖", ru: "Законы", tab: "politics" },
-    { key: "map", icon: "🗺", ru: "Карта/Дипломатия", tab: "diplo" }
+    { key: "build", icon: "🔨", ru: "Строительство", tab: "build", hk: "B" },
+    { key: "dynasty", icon: "👑", ru: "Династия", tab: "dynasty", hk: "" },
+    { key: "army", icon: "⚔", ru: "Войско", tab: "army", hk: "T" },
+    { key: "science", icon: "📜", ru: "Наука", tab: "research", hk: "R" },
+    { key: "laws", icon: "⚖", ru: "Законы", tab: "politics", hk: "" },
+    { key: "map", icon: "🗺", ru: "Карта/Дипломатия", tab: "diplo", hk: "" }
   ];
   var MOBILE_MAX_PX = 820;
+  var SEASONS_RU = ["Весна", "Лето", "Осень", "Зима"];
+  var WEATHER_RU = {
+    sun: "Ясно",
+    cloud: "Облачно",
+    rain: "Дождь",
+    snow: "Снег"
+  };
+  function miniStatus(simLike) {
+    const s = simLike || {};
+    const d = Number(s.day);
+    return {
+      day: Number.isFinite(d) ? String(Math.floor(d)) : "—",
+      season: SEASONS_RU[Number(s.seasonIdx)] || "—",
+      weather: WEATHER_RU[s.weather] || "—"
+    };
+  }
   function buttonByTab(tab) {
     return DOCK_BUTTONS.find((b) => b.tab === tab) || null;
   }
@@ -38902,10 +39663,10 @@ ${out}`;
   }
   function dockHtml(buttons) {
     return buttons.map((b) => `<button class="ft-dock-btn" type="button" data-ft-key="${b.key}" data-ft-tab="${b.tab}"
-      title="${b.ru}" aria-label="${b.ru}">
+      title="${b.ru}${b.hk ? ` [${b.hk}]` : ""}" aria-label="${b.ru}">
+      ${b.hk ? `<span class="ft-dock-hk" aria-hidden="true">${b.hk}</span>` : ""}
       <span class="ft-dock-ic" aria-hidden="true">${b.icon}</span>
-      <span class="ft-dock-ru">${b.ru}</span>
-    </button>`).join("");
+    </button>`).join('<i class="ft-dock-sep" aria-hidden="true"></i>');
   }
   function ensureCss2() {
     if (document.getElementById("ft-dock-css")) return;
@@ -38913,50 +39674,112 @@ ${out}`;
     st.id = "ft-dock-css";
     st.textContent = `
 #ftDock {
-  position: fixed; left: 50%; transform: translateX(-50%);
-  bottom: calc(12px + var(--safe-bottom, 0px)); z-index: 30;
-  display: none; gap: 6px; padding: 6px;
-  background: rgba(20, 18, 16, 0.78);
-  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-  border: 1px solid var(--gold-line, var(--panel-border));
-  border-radius: 16px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(201, 162, 39, 0.18);
+  --ft-metal: #1a1d18;      /* базовый тёмный металл бара */
+  --ft-metal-hi: #262b21;   /* верх фаски */
+  --ft-metal-lo: #101309;   /* низ фаски */
+  --ft-amber: #c8a24a;      /* янтарная кромка и подсветка */
+  position: fixed; left: 0; right: 0;
+  bottom: var(--safe-bottom, 0px); z-index: 30;
+  height: 64px; padding: 0 14px;
+  display: none; align-items: center; justify-content: space-between;
+  background-color: var(--ft-metal);
+  /* Металл: вертикальная фаска + едва заметная диагональная насечка, чтобы
+     плита не читалась плоским чёрным прямоугольником. */
+  background-image:
+    repeating-linear-gradient(135deg, rgba(255,255,255,0.022) 0 2px, transparent 2px 7px),
+    linear-gradient(180deg, #2a2f24 0%, var(--ft-metal) 42%, #0e1108 100%);
+  border-top: 1px solid var(--ft-amber);
+  /* Вторая, притушенная янтарная риска под кромкой — «приборный» шов. */
+  box-shadow:
+    inset 0 2px 0 rgba(200, 162, 74, 0.22),
+    inset 0 3px 0 rgba(0, 0, 0, 0.55),
+    inset 0 12px 18px rgba(0, 0, 0, 0.35),
+    0 -8px 22px rgba(0, 0, 0, 0.45);
 }
 @supports not ((backdrop-filter: blur(10px)) or (-webkit-backdrop-filter: blur(10px))) {
-  #ftDock { background: rgba(20, 18, 16, 0.96); }
+  #ftDock { background-color: #14170f; }
 }
 #ftDock.show { display: flex; }
-.ft-dock-btn {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 2px; min-width: 74px; min-height: 54px; padding: 5px 10px;
-  background: rgba(236, 229, 211, 0.04);
-  color: var(--text, #ece5d3);
-  border: 1px solid rgba(201, 162, 39, 0.22);
-  border-radius: 12px; cursor: pointer;
-  font-family: inherit; font-size: 10px; font-weight: 600;
-  letter-spacing: 0.4px; text-transform: uppercase;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+/* Левая группа: шесть квадратных кнопок с разделителями-фасками. */
+.ft-dock-group { display: flex; align-items: center; }
+.ft-dock-sep {
+  width: 1px; height: 40px; margin: 0 8px; flex: 0 0 auto;
+  background: linear-gradient(180deg,
+    transparent 0%, rgba(0,0,0,0.95) 20%, rgba(150,158,126,0.55) 50%, rgba(0,0,0,0.95) 80%, transparent 100%);
 }
-.ft-dock-btn .ft-dock-ic { font-size: 19px; line-height: 1; }
+.ft-dock-btn {
+  position: relative; flex: 0 0 auto;
+  width: 48px; height: 48px; padding: 0; margin: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(180deg, #2a2f24 0%, #1a1d14 58%, #13160d 100%);
+  color: var(--text, #ece5d3);
+  border: 1px solid rgba(0, 0, 0, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.65),
+    inset 1px 0 0 rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.ft-dock-btn .ft-dock-ic { font-size: 21px; line-height: 1; }
+.ft-dock-btn .ft-dock-hk {
+  position: absolute; top: 2px; right: 4px;
+  font-family: var(--mono, monospace); font-size: 9px; font-weight: 700;
+  line-height: 1; letter-spacing: 0.5px;
+  color: #8a7a4e;                       /* приглушённый янтарь покоя */
+}
 @media (hover: hover) and (pointer: fine) {
-  .ft-dock-btn:hover { background: rgba(201, 162, 39, 0.16); border-color: var(--accent, #c9a227); }
+  .ft-dock-btn:hover {
+    border-color: rgba(200, 162, 74, 0.65);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.09),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.6),
+      inset 0 0 10px rgba(200, 162, 74, 0.12);
+  }
 }
 .ft-dock-btn:active { transform: translateY(1px); }
+/* Активная вкладка: янтарная рамка, тёплый свет изнутри и яркий хоткей —
+   состояние видно боковым зрением, без чтения надписей. */
 .ft-dock-btn.active {
-  background: linear-gradient(180deg, #ddb645, #b78e1c);
-  border-color: var(--accent, #c9a227);
-  color: #1c1608;
+  border-color: var(--ft-amber);
+  background: linear-gradient(180deg, #33301f 0%, #241f11 60%, #1a160b 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(232, 200, 134, 0.35),
+    inset 0 0 12px rgba(200, 162, 74, 0.22),
+    0 0 10px rgba(200, 162, 74, 0.28);
 }
-/* Телефон: док растёт на всю ширину, кнопки тянутся поровну; поднимаем его
-   над свёрнутым нижним шитом (56 px + ручка). */
+.ft-dock-btn.active .ft-dock-hk { color: #ffd98a; }
+
+/* Правая группа: мини-статус день/сезон/погода — приборная вставка с теми же
+   фасками, что и кнопки, чтобы читалась частью бара, а не ярлыком. */
+.ft-dock-status { display: flex; align-items: center; }
+.ft-dock-status .ft-st {
+  display: inline-flex; flex-direction: column; justify-content: center;
+  min-width: 52px; padding: 0 6px; gap: 2px;
+}
+.ft-dock-status .ft-st small {
+  font-size: 8px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: #8a7a4e;
+}
+.ft-dock-status .ft-st b {
+  font-family: var(--mono, monospace); font-size: 13px; font-weight: 700;
+  color: var(--text, #ece5d3); white-space: nowrap;
+}
+
+/* Телефон: бар остаётся плитой на всю ширину, но приподнимается над свёрнутым
+   нижним шитом (56 px + ручка) и ужимается: кнопки 44px, статусы без меток. */
 @media (max-width: ${MOBILE_MAX_PX}px) {
-  #ftDock { left: 8px; right: 8px; transform: none; bottom: calc(64px + var(--safe-bottom, 0px)); justify-content: space-between; }
-  .ft-dock-btn { flex: 1 1 0; min-width: 0; padding: 5px 2px; }
-  .ft-dock-btn .ft-dock-ru { font-size: 9px; letter-spacing: 0.2px; }
+  #ftDock { height: 56px; padding: 0 8px; bottom: calc(60px + var(--safe-bottom, 0px)); }
+  .ft-dock-btn { width: 44px; height: 44px; margin: 0 1px; }
+  .ft-dock-btn .ft-dock-ic { font-size: 19px; }
+  .ft-dock-sep { margin: 0 3px; height: 32px; }
+  .ft-dock-status .ft-st { min-width: 0; padding: 0 4px; }
+  .ft-dock-status .ft-st small { display: none; }
 }`;
     document.head.appendChild(st);
   }
-  function bindClicks(root2) {
+  function bindClicks2(root2) {
     root2.addEventListener("click", (e) => {
       const btn = e.target.closest && e.target.closest("[data-ft-tab]");
       if (!btn || btn.disabled) return;
@@ -38987,29 +39810,59 @@ ${out}`;
     if (win2 && win2.classList.contains("show")) return true;
     return false;
   }
+  var STATUS_CELLS = [
+    ["day", "День"],
+    ["season", "Сезон"],
+    ["weather", "Погода"]
+  ];
   function start2() {
     ensureCss2();
     let root2 = document.getElementById("ftDock");
     if (!root2) {
       root2 = document.createElement("nav");
       root2.id = "ftDock";
-      root2.setAttribute("aria-label", "Командный док");
-      root2.innerHTML = dockHtml(DOCK_BUTTONS);
+      root2.setAttribute("aria-label", "Командный бар");
+      root2.innerHTML = `<div class="ft-dock-group">${dockHtml(DOCK_BUTTONS)}</div><div class="ft-dock-status" role="status" aria-label="День, сезон, погода">` + STATUS_CELLS.map(([k, ru]) => `<span class="ft-st"><small>${ru}</small><b data-ft-st="${k}">—</b></span>`).join('<i class="ft-dock-sep" aria-hidden="true"></i>') + `</div>`;
       document.body.appendChild(root2);
-      bindClicks(root2);
+      bindClicks2(root2);
     }
-    setInterval(() => {
+    const stEls = {
+      day: root2.querySelector('[data-ft-st="day"]'),
+      season: root2.querySelector('[data-ft-st="season"]'),
+      weather: root2.querySelector('[data-ft-st="weather"]')
+    };
+    let lastTab = null, lastShown = null, lastSt = "";
+    const frame2 = () => {
       try {
         const F = window.__frontier;
-        const hide2 = shouldHide(F);
-        root2.classList.toggle("show", !hide2);
-        if (!hide2) syncActive(root2, F.hud.tab);
+        const shown = !shouldHide(F);
+        if (shown !== lastShown) {
+          lastShown = shown;
+          root2.classList.toggle("show", shown);
+          lastTab = null;
+        }
+        if (shown && F) {
+          if (F.hud.tab !== lastTab) {
+            lastTab = F.hud.tab;
+            syncActive(root2, lastTab);
+          }
+          const st = miniStatus(F.sim || {});
+          const key = `${st.day}|${st.season}|${st.weather}`;
+          if (key !== lastSt) {
+            lastSt = key;
+            for (const k of Object.keys(stEls)) {
+              if (stEls[k] && stEls[k].textContent !== st[k]) stEls[k].textContent = st[k];
+            }
+          }
+        }
       } catch {
       }
-    }, 300);
+      requestAnimationFrame(frame2);
+    };
+    requestAnimationFrame(frame2);
   }
   if (typeof document !== "undefined" && typeof window !== "undefined" && !window.__frontierDock) {
-    window.__frontierDock = { version: 1 };
+    window.__frontierDock = { version: 2 };
     start2();
   }
 
@@ -39054,21 +39907,25 @@ ${out}`;
     }
     return { day: snap.day, res: { ...snap.res }, rates };
   }
-  function pillHtml(item, value, cap, badge) {
+  function segHtml(item, value, cap, badge) {
     const lim = cap && cap < UNLIMITED_CAP;
     const full = lim && value >= cap - 0.5;
     return `<span class="ft-res${item.cls ? " " + item.cls : ""}${full ? " ft-full" : ""}" title="${item.ru}">
-    <span class="ft-ic" aria-hidden="true">${item.icon}</span>
-    <b class="ft-num">${fmtNum(value)}</b>${lim ? `<small class="ft-cap">/${fmtNum(cap)}</small>` : ""}
-    <i class="ft-rate ${badge.cls}">${badge.text}</i>
+    <span class="ft-res-in">
+      <span class="ft-ic" aria-hidden="true">${item.icon}</span>
+      <b class="ft-num">${fmtNum(value)}</b>${lim ? `<small class="ft-cap">/${fmtNum(cap)}</small>` : ""}
+      <i class="ft-rate ${badge.cls}">${badge.text}</i>
+    </span>
   </span>`;
   }
-  function popPillHtml(pop, cap) {
+  function popSegHtml(pop, cap) {
     const room = Math.max(0, (Number(cap) || 0) - pop);
     return `<span class="ft-res ft-pop" title="${POP_RU}">
-    <span class="ft-ic" aria-hidden="true">${POP_ICON}</span>
-    <b class="ft-num">${fmtNum(pop)}</b><small class="ft-cap">/${fmtNum(cap)}</small>
-    ${room > 0 ? `<i class="ft-rate off">+${fmtNum(room)}</i>` : '<i class="ft-rate dn">полно</i>'}
+    <span class="ft-res-in">
+      <span class="ft-ic" aria-hidden="true">${POP_ICON}</span>
+      <b class="ft-num">${fmtNum(pop)}</b><small class="ft-cap">/${fmtNum(cap)}</small>
+      ${room > 0 ? `<i class="ft-rate off">+${fmtNum(room)}</i>` : `<i class="ft-rate dn">полно</i>`}
+    </span>
   </span>`;
   }
   function ensureCss3() {
@@ -39077,55 +39934,101 @@ ${out}`;
     st.id = "ft-topbar-css";
     st.textContent = `
 #ftResBar {
+  --ft-metal: #1a1d18;      /* базовый тёмный металл прибора */
+  --ft-metal-hi: #242820;   /* верхняя фаска */
+  --ft-metal-lo: #101309;   /* нижняя фаска */
+  --ft-amber: #c8a24a;      /* янтарь: риски, рамки, активные состояния */
+  --ft-red: #b0413e;        /* красный тревоги: минусовой прирост, полный склад */
+  --ft-cut: polygon(7px 0, 100% 0, 100% calc(100% - 7px),
+                    calc(100% - 7px) 100%, 0 100%, 0 7px); /* скос двух углов */
   position: fixed; top: calc(44px + var(--safe-top, 0px)); left: 50%;
   transform: translateX(-50%); z-index: 18;
-  display: flex; align-items: center; gap: 4px; max-width: min(94vw, 640px);
-  padding: 4px 6px;
-  background: rgba(20, 18, 16, 0.72);
-  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-  border: 1px solid var(--gold-line, var(--panel-border));
-  border-radius: 14px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  display: flex; align-items: center; gap: 4px; max-width: min(94vw, 880px);
+  padding: 4px 8px;
+  background-color: var(--ft-metal);
+  background-image:
+    repeating-linear-gradient(135deg, rgba(255,255,255,0.02) 0 2px, transparent 2px 7px),
+    linear-gradient(180deg, #262b21 0%, var(--ft-metal) 45%, var(--ft-metal-lo) 100%);
+  /* Не пиллюли: приборная планка — прямые кромки, янтарный шов сверху. */
+  border-top: 1px solid rgba(200, 162, 74, 0.75);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.03),
+    0 6px 18px rgba(0, 0, 0, 0.45);
 }
 @supports not ((backdrop-filter: blur(10px)) or (-webkit-backdrop-filter: blur(10px))) {
-  #ftResBar { background: rgba(20, 18, 16, 0.95); }
+  #ftResBar { background-color: #14170f; }
 }
 /* Центр верхней кромки свободен у всех оверлеев игры (alerts слева, timeBox
    справа, тосты ниже), но перекрытие всё равно мягкое: pointer-events оставляем,
    z-index держим НИЖЕ родных полос (19/20), чтобы они всегда были доступны. */
+
+/* Сегмент-ячейка: тёмно-янтарная грань (рамка) + внутренняя плита. Настоящий
+   border нельзя — clip-path режет углы вместе с ним, поэтому рамка сделана
+   фоном внешнего слоя, а внутренняя вставка повторяет скос со сдвигом 1px. */
 .ft-res {
-  display: inline-flex; align-items: baseline; gap: 3px;
-  padding: 2px 8px; border-radius: 999px;
-  background: rgba(236, 229, 211, 0.05);
-  border: 1px solid rgba(201, 162, 39, 0.16);
-  white-space: nowrap;
+  position: relative; padding: 0; white-space: nowrap;
+  background: linear-gradient(180deg, rgba(200, 162, 74, 0.38), rgba(200, 162, 74, 0.16));
+  clip-path: var(--ft-cut);
 }
-.ft-res .ft-ic { font-size: 13px; align-self: center; }
-.ft-res .ft-num { font-family: var(--mono, monospace); font-size: 15px; font-weight: 700; color: var(--text, #ece5d3); }
-.ft-res .ft-cap { font-family: var(--mono, monospace); font-size: 10px; color: var(--dim, #a89f8e); }
-.ft-res .ft-rate { font-style: normal; font-size: 9px; font-weight: 700; margin-left: 1px; letter-spacing: -0.2px; }
-.ft-res .ft-rate.up { color: var(--good, #93de93); }
-.ft-res .ft-rate.dn { color: var(--bad, #ef9a9a); }
-.ft-res .ft-rate.zero { color: var(--dim, #a89f8e); }
-.ft-res .ft-rate.off { color: var(--dim, #a89f8e); opacity: 0.7; }
-.ft-res.ft-full { border-color: rgba(232, 200, 134, 0.55); background: rgba(232, 200, 134, 0.12); }
+.ft-res-in {
+  position: relative; margin: 1px;
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 8px 2px 10px;
+  background:
+    linear-gradient(180deg, #22261e 0%, var(--ft-metal) 55%, #15180f 100%);
+  clip-path: var(--ft-cut);
+}
+/* Тонкие янтарные риски по краям плиты — «риски шкалы», как на приборной доске:
+   делят ряд чисел на ячейки даже без чтения подписей. */
+.ft-res-in::before, .ft-res-in::after {
+  content: ''; position: absolute; top: 5px; bottom: 5px; width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(200, 162, 74, 0.34) 30%, rgba(200, 162, 74, 0.34) 70%, transparent);
+}
+.ft-res-in::before { left: 5px; }
+.ft-res-in::after { right: 5px; }
+
+.ft-res .ft-ic { font-size: 12px; align-self: center; }
+/* Числа — моно и табличные, ширина фиксирована в ch: 999→1000 не двигает
+   соседние ячейки, глаз не теряет позицию значения. */
+.ft-res .ft-num {
+  font-family: var(--mono, monospace); font-size: 14px; font-weight: 700;
+  font-variant-numeric: tabular-nums; min-width: 4.5ch; text-align: right;
+  color: var(--text, #ece5d3);
+}
+.ft-res .ft-cap { font-family: var(--mono, monospace); font-size: 9px; color: #8a8577; }
+.ft-res .ft-rate { font-style: normal; font-size: 8px; font-weight: 700; margin-left: 1px; letter-spacing: -0.2px; }
+.ft-res .ft-rate.up { color: #8bbf5f; }
+/* Красный семейства #b0413e, чуть осветлённый для контраста на тёмном металле:
+   сам #b0413e оставлен рамкам и состоянию полного склада. */
+.ft-res .ft-rate.dn { color: #c95a52; }
+.ft-res .ft-rate.zero { color: #8a8577; }
+.ft-res .ft-rate.off { color: #8a8577; opacity: 0.7; }
+/* Полный склад — тревога: янтарная грань вспыхивает, число греется. */
+.ft-res.ft-full { background: linear-gradient(180deg, rgba(200, 162, 74, 0.75), rgba(176, 65, 62, 0.45)); }
 .ft-res.ft-full .ft-num { color: var(--warn, #e8c886); }
 #ftResToggle {
   flex-shrink: 0; width: 26px; height: 26px; margin-left: 2px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: transparent; color: var(--accent, #c9a227);
-  border: 1px solid rgba(201, 162, 39, 0.3); border-radius: 50%;
+  background: linear-gradient(180deg, #22261e, #14170f);
+  color: var(--accent, #c9a227);
+  border: 1px solid rgba(200, 162, 74, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   cursor: pointer; font-size: 11px; line-height: 1;
 }
-#ftResToggle:hover { background: rgba(201, 162, 39, 0.16); }
+#ftResToggle:hover { background: rgba(200, 162, 74, 0.18); }
 /* Свёрнутый режим: остаются чип-кнопка и две главные цифры — золото и еда:
    это валюта решений «могу ли строить/пережду ли зиму». */
 #ftResBar.collapsed .ft-res { display: none; }
 #ftResBar.collapsed .ft-res.ft-gold, #ftResBar.collapsed .ft-res.ft-food { display: inline-flex; }
 #ftResBar.collapsed .ft-res .ft-cap, #ftResBar.collapsed .ft-res .ft-rate { display: none; }
 @media (max-width: 820px) {
-  #ftResBar { gap: 3px; padding: 3px 5px; top: calc(40px + var(--safe-top, 0px)); }
-  .ft-res .ft-num { font-size: 13px; }
+  /* На телефоне родной timeBox (пауза/скорость) занимает ту же верхнюю строку:
+     опускаем прибор ниже него, чтобы плиты не срастались. */
+  #ftResBar { gap: 3px; padding: 3px 6px; top: calc(80px + var(--safe-top, 0px)); }
+  .ft-res-in { padding: 2px 6px 2px 8px; }
+  .ft-res .ft-num { font-size: 12px; min-width: 3.5ch; }
 }`;
     document.head.appendChild(st);
   }
@@ -39148,19 +40051,19 @@ ${out}`;
     root2.dataset.ftInit = "1";
     return root2;
   }
-  function render(root2, sim2, tracker) {
+  function render2(root2, sim2, tracker) {
     const t0 = advanceRates(tracker, snapshotOf2(sim2));
     const caps = sim2.resCap || {};
     const parts = [];
     for (const r of BAR_RES) {
       const b = rateBadge(t0.rates ? t0.rates[r.id] : null);
       const cls = r.id === "gold" ? "ft-gold" : r.id === "food" ? "ft-food" : "";
-      parts.push(pillHtml({ ...r, cls }, sim2.res[r.id] || 0, caps[r.id], b));
+      parts.push(segHtml({ ...r, cls }, sim2.res[r.id] || 0, caps[r.id], b));
     }
-    parts.push(popPillHtml(sim2.villagers.length, typeof sim2.housingCap === "function" ? sim2.housingCap() : 0));
+    parts.push(popSegHtml(sim2.villagers.length, typeof sim2.housingCap === "function" ? sim2.housingCap() : 0));
     const html = parts.join("");
-    if (html !== render._last) {
-      render._last = html;
+    if (html !== render2._last) {
+      render2._last = html;
       applySlots(root2, parts);
     }
     return t0;
@@ -39187,462 +40090,15 @@ ${out}`;
         const show = sim2 && F.hud && ov && ov.classList.contains("hidden") && !(win2 && win2.classList.contains("show"));
         root2.style.display = show ? "flex" : "none";
         if (!show) return;
-        const t0 = render(root2, sim2, tracker.sim === sim2 ? tracker : { day: null, res: null });
+        const t0 = render2(root2, sim2, tracker.sim === sim2 ? tracker : { day: null, res: null });
         tracker = { sim: sim2, day: t0.day, res: t0.res, rates: t0.rates };
       } catch {
       }
     }, 250);
   }
   if (typeof document !== "undefined" && typeof window !== "undefined" && !window.__frontierTopbar) {
-    window.__frontierTopbar = { version: 1 };
+    window.__frontierTopbar = { version: 2 };
     start3();
-  }
-
-  // app/src/ui/building_drawer.js
-  var CATEGORIES = [
-    { key: "home", ru: "Жильё и Быт" },
-    { key: "extract", ru: "Добыча и Склады" },
-    { key: "workshops", ru: "Мастерские" },
-    { key: "defense", ru: "Оборона и Стены" },
-    { key: "culture", ru: "Культ и Чудеса" }
-  ];
-  var FALLBACK_CAT = "workshops";
-  var CATEGORY_OF = {
-    // — Жильё и Быт: крыша над головой и повседневная жизнь (лечебницы и
-    //   канализация тут, а не в «Мастерских», потому что игрок ищет их словом
-    //   «быт», а не «производство»).
-    campfire: "home",
-    hut: "home",
-    story_fire: "home",
-    stone_house: "home",
-    apartment: "home",
-    skyscraper: "home",
-    aqueduct: "home",
-    sewers: "home",
-    clinic: "home",
-    hospital: "home",
-    // — Добыча и Склады: сырьё, еда и потолки склада. Торговля и финансы тоже
-    //   здесь: рынок/банк/сокровищница «добывают» золото как шахта — камень,
-    //   отдельной экономической категории в шторке нет.
-    forager: "extract",
-    lumber: "extract",
-    quarry: "extract",
-    hunter_lodge: "extract",
-    pasture: "extract",
-    farm: "extract",
-    mill: "extract",
-    port: "extract",
-    mine: "extract",
-    granary: "extract",
-    woodshed: "extract",
-    stoneyard: "extract",
-    depot: "extract",
-    market: "extract",
-    treasury: "extract",
-    bank: "extract",
-    stock_exchange: "extract",
-    guild_hall: "extract",
-    shipyard: "extract",
-    train_station: "extract",
-    airport: "extract",
-    // — Мастерские: тяжёлое производство и энергетика (паровая и далее).
-    smithy: "workshops",
-    workshop: "workshops",
-    factory: "workshops",
-    robo_factory: "workshops",
-    foundry: "workshops",
-    power_plant: "workshops",
-    npp: "workshops",
-    solar: "workshops",
-    fusion_reactor: "workshops",
-    // — Оборона и Стены: военные постройки; Замок здесь, а не в «Жилье», хоть он
-    //   даёт и жильё — игрок ищет его по слову «оборона».
-    palisade: "defense",
-    stone_walls: "defense",
-    barracks: "defense",
-    armory: "defense",
-    castle: "defense",
-    // — Культ и Чудеса: вера, зрелища, наука и финальные мегапроекты. Наука
-    //   (академии, лаборатории, ИИ) живёт здесь, а не в «Мастерских»: знания в
-    //   ФРОНТИРЕ — культурный путь к Шпилю, и искать Университет игрок идёт
-    //   вместе с Храмом, а не с Кузницей.
-    temple: "culture",
-    amphitheater: "culture",
-    media_tower: "culture",
-    academy: "culture",
-    university: "culture",
-    press: "culture",
-    observatory: "culture",
-    lab: "culture",
-    datacenter: "culture",
-    biolab: "culture",
-    ai_core: "culture",
-    spaceport: "culture",
-    spire: "culture"
-  };
-  var ICONS2 = {
-    campfire: "🔥",
-    hut: "🛖",
-    forager: "🌿",
-    lumber: "🪓",
-    quarry: "⛏️",
-    story_fire: "🎶",
-    hunter_lodge: "🏹",
-    pasture: "🐄",
-    farm: "🌾",
-    granary: "🧺",
-    woodshed: "🪵",
-    stoneyard: "🪨",
-    depot: "📦",
-    mine: "⚒️",
-    smithy: "🔨",
-    market: "🏪",
-    stone_house: "🏠",
-    palisade: "🚧",
-    barracks: "⚔",
-    armory: "🛡",
-    treasury: "💰",
-    port: "⚓",
-    aqueduct: "🌉",
-    temple: "⛩",
-    clinic: "⚕️",
-    amphitheater: "🎭",
-    academy: "🏛️",
-    castle: "🏰",
-    university: "🎓",
-    mill: "🌀",
-    guild_hall: "🧰",
-    bank: "🏦",
-    stone_walls: "🧱",
-    press: "🖨️",
-    observatory: "🔭",
-    shipyard: "⛵",
-    foundry: "🔩",
-    workshop: "🧵",
-    train_station: "🚂",
-    factory: "🏭",
-    sewers: "🚰",
-    stock_exchange: "📈",
-    power_plant: "⚡",
-    lab: "🧪",
-    apartment: "🏢",
-    media_tower: "📡",
-    hospital: "🏥",
-    airport: "✈️",
-    npp: "☢️",
-    datacenter: "💾",
-    solar: "🔆",
-    robo_factory: "🤖",
-    biolab: "🧬",
-    skyscraper: "🌆",
-    ai_core: "🧠",
-    fusion_reactor: "⚛️",
-    spaceport: "🚀",
-    spire: "🗼"
-  };
-  var ICON_FALLBACK = "🏗";
-  function iconOf(id) {
-    return ICONS2[id] || ICON_FALLBACK;
-  }
-  function categoryOf(id) {
-    return CATEGORY_OF[id] || FALLBACK_CAT;
-  }
-  function categoriesOfBuildings(table) {
-    const out = {};
-    for (const c of CATEGORIES) out[c.key] = [];
-    for (const id of Object.keys(table || {})) out[categoryOf(id)].push(id);
-    return out;
-  }
-  var GEN = { food: "еды", wood: "дерева", stone: "камня", steel: "стали", gold: "золота", knowledge: "знаний" };
-  function meta(r) {
-    return RES.find((q) => q.id === r);
-  }
-  var ERA_OF_TECH = (() => {
-    const m = {};
-    let e = 0;
-    for (const t of TECHS) {
-      if (t.era) e++;
-      m[t.id] = e;
-    }
-    return m;
-  })();
-  function fmt3(v) {
-    return Number.isInteger(v) ? String(v) : String(+v.toFixed(1));
-  }
-  function effectLines(def) {
-    const L = [];
-    if (def.out) {
-      for (const [r, v] of Object.entries(def.out)) {
-        const m = meta(r);
-        L.push(`Даёт ${m && m.icon || r}${fmt3(v)} в день с рабочего`);
-      }
-      if (def.workers) L.push(`Рабочих мест: ${def.workers}`);
-    }
-    if (def.know) L.push(`Знания поселению: +${fmt3(def.know)} в день`);
-    if (def.housing) L.push(`Жильё для ${def.housing} жителей`);
-    if (def.happy) L.push(`Счастье: +${def.happy} всем`);
-    if (def.cap) L.push("Склад: " + Object.entries(def.cap).map(([r, v]) => `+${v} ${GEN[r] || r}`).join(", "));
-    if (def.defense) L.push(def.wall ? `Оборона +${def.defense} за сегмент стены` : `Оборона +${def.defense}`);
-    if (def.wall && !def.defense) L.push(`Прочность стены: ${def.wall}`);
-    if (def.medicine) L.push(`Болезни ×${fmt3(def.medicine)}`);
-    if (def.industry) L.push(`Промышленность ${def.industry >= 1 ? "+" : ""}${Math.round((def.industry - 1) * 100)}%`);
-    if (def.goldMult) L.push(`Всё золото ×${def.goldMult}`);
-    if (def.armyMult) L.push(`Сила армии ×${def.armyMult}`);
-    if (def.caravanMult) L.push(`Караваны ×${def.caravanMult}`);
-    if (def.birthMult) L.push(`Рождаемость ×${def.birthMult}`);
-    if (def.marketBoost) L.push(`Курсы рынка ×${def.marketBoost}`);
-    if (def.radiusBonus) L.push(`Радиусы эффектов +${def.radiusBonus}`);
-    if (def.consume) L.push("Тратит " + Object.entries(def.consume).map(([r, v]) => `${(meta(r) || {}).icon || r}${fmt3(v)}/день`).join(" "));
-    if (def.aura) L.push(`Аура: радиус ${def.aura.r}, множитель ×${fmt3(def.aura.gather || def.aura.farm)}`);
-    if (def.special === "train") L.push("Обучает бойцов за еду и золото");
-    if (def.special === "missions") L.push("Миссии: Луна и Марс");
-    if (def.special === "spire") L.push("Мегапроект: 5 стадий");
-    if (def.unique) L.push("Можно построить только один");
-    return L;
-  }
-  function priceBadges(cost, costMult) {
-    const m = costMult || 1;
-    const rows = Object.entries(cost || {});
-    if (!rows.length) return [{ icon: "", ru: "Бесплатно", n: "" }];
-    return rows.map(([r, v]) => {
-      const md = meta(r);
-      return { icon: md && md.icon || r, ru: md && md.ru || r, n: Math.ceil(v * m) };
-    });
-  }
-  function lackStr(cost, res, m) {
-    const parts = [];
-    for (const [r, v] of Object.entries(cost || {})) {
-      const need = Math.ceil(v * m);
-      const have = Math.floor(res && res[r] || 0);
-      if (have < need) {
-        const md = meta(r);
-        parts.push(`${md && md.icon || r}${need - have}`);
-      }
-    }
-    return parts.length ? parts.join(" ") : null;
-  }
-  function cardModel(id, def, ctx) {
-    const c = ctx || {};
-    const techs = c.techs || { has: () => false };
-    const alive2 = c.uniqueAlive || { has: () => false };
-    const locked = !!(def.req && !techs.has(def.req));
-    const built = !!(def.unique && alive2.has(id));
-    const lack = lackStr(def.cost, c.res, c.costMult || 1);
-    let reason = "";
-    if (locked) {
-      const t = TECHS.find((q) => q.id === def.req);
-      reason = `Нужна технология: ${t ? t.name : def.req}`;
-    } else if (built) reason = "Уже построено";
-    else if (lack) reason = `Не хватает: ${lack}`;
-    const eraIdx = def.req ? ERA_OF_TECH[def.req] ?? 0 : 0;
-    return {
-      id,
-      name: def.name,
-      icon: iconOf(id),
-      eraRu: (ERAS[eraIdx] || {}).ru || "",
-      price: priceBadges(def.cost, c.costMult),
-      out: effectLines(def),
-      desc: def.desc || "",
-      disabled: locked || built || !!lack,
-      // Кликабельность — ровно как у родной вкладки: панель строить даёт и без
-      // полного кошелька (призрак ставится, деньги спросят при подтверждении).
-      clickable: !locked && !built,
-      reason
-    };
-  }
-  function cardHtml(m) {
-    const badges = m.price.map((b) => `<span class="ft-bd-badge" title="${b.ru}">${b.n === "" ? b.ru : b.icon + b.n}</span>`).join("");
-    const outs = m.out.map((s) => `<div>${s}</div>`).join("");
-    return `<div class="ft-bd-card${m.disabled ? " ft-bd-off" : ""}"${m.clickable ? ` data-ft-build="${m.id}"` : ""} role="button">
-    <div class="ft-bd-head"><span class="ft-bd-ic" aria-hidden="true">${m.icon}</span><span class="ft-bd-name">${m.name}</span><span class="ft-bd-era">${m.eraRu}</span></div><div class="ft-bd-price">${badges}</div>` + (outs ? `<div class="ft-bd-out">${outs}</div>` : "") + (m.desc ? `<div class="ft-bd-desc">${m.desc}</div>` : "") + (m.reason ? `<div class="ft-bd-reason">${m.reason}</div>` : "") + `</div>`;
-  }
-  function cardsHtml(ids, ctx) {
-    return (ids || []).map((id) => {
-      const def = BUILDINGS[id];
-      return def ? cardHtml(cardModel(id, def, ctx)) : "";
-    }).join("");
-  }
-  function drawerVisible(st) {
-    return !!st && st.tab === "build" && !st.closed && !!st.started && !st.placing;
-  }
-  function ensureCss4() {
-    if (document.getElementById("ft-bd-css")) return;
-    const st = document.createElement("style");
-    st.id = "ft-bd-css";
-    st.textContent = `
-#ftBDrawer {
-  position: fixed; left: 10px; top: 64px; bottom: 78px; width: 348px; z-index: 32;
-  display: flex; flex-direction: column;
-  background: var(--panel, rgba(20, 18, 16, 0.92));
-  border: 1px solid var(--panel-border, rgba(201, 162, 39, 0.35));
-  border-radius: var(--radius, 12px);
-  color: var(--text, #ece5d3);
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(201, 162, 39, 0.14);
-  transform: translateX(-116%); opacity: 0; visibility: hidden; pointer-events: none;
-  transition: transform 0.22s ease, opacity 0.18s ease, visibility 0s linear 0.18s;
-}
-#ftBDrawer.open {
-  transform: none; opacity: 1; visibility: visible; pointer-events: auto;
-  transition: transform 0.22s ease, opacity 0.18s ease;
-}
-@media (prefers-reduced-motion: reduce) { #ftBDrawer { transition: none; } }
-.ft-bd-top {
-  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
-  border-bottom: 1px solid var(--gold-faint, rgba(201, 162, 39, 0.14));
-  font-family: var(--serif, Georgia, serif); letter-spacing: 0.5px;
-}
-.ft-bd-x {
-  margin-left: auto; width: 26px; height: 26px; border-radius: 8px;
-  background: rgba(236, 229, 211, 0.05); color: var(--dim, #a89f8e);
-  border: 1px solid var(--gold-line, rgba(201, 162, 39, 0.35));
-  cursor: pointer; font-size: 15px; line-height: 1;
-}
-.ft-bd-x:hover { color: var(--text, #ece5d3); background: rgba(201, 162, 39, 0.16); }
-.ft-bd-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 10px; border-bottom: 1px solid var(--gold-faint, rgba(201, 162, 39, 0.14)); }
-.ft-bd-tab {
-  padding: 4px 9px; border-radius: 999px; cursor: pointer;
-  font-size: 10px; font-weight: 600; letter-spacing: 0.3px; font-family: inherit;
-  background: rgba(236, 229, 211, 0.04); color: var(--dim, #a89f8e);
-  border: 1px solid rgba(201, 162, 39, 0.18);
-}
-.ft-bd-tab:hover { color: var(--text, #ece5d3); }
-.ft-bd-tab.ft-bd-on {
-  background: var(--accent, #c9a227); color: #1c1608;
-  border-color: var(--accent, #c9a227);
-}
-.ft-bd-list {
-  overflow-y: auto; padding: 8px; display: grid;
-  grid-template-columns: 1fr 1fr; gap: 8px; align-content: start;
-  scrollbar-width: thin; scrollbar-color: var(--gold-line, rgba(201,162,39,.35)) transparent;
-}
-.ft-bd-card {
-  background: rgba(236, 229, 211, 0.04);
-  border: 1px solid rgba(201, 162, 39, 0.18);
-  border-radius: 10px; padding: 8px; min-width: 0;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
-}
-@media (hover: hover) and (pointer: fine) {
-  .ft-bd-card[data-ft-build]:hover { border-color: var(--accent, #c9a227); background: rgba(201, 162, 39, 0.09); }
-}
-/* Недоступное — серым и без курсора-руки, но кликабельные «дорогие» карточки
-   остаются нажимаемыми: так же ведёт себя родная вкладка «Стройка». */
-.ft-bd-off { opacity: 0.55; filter: grayscale(0.75); }
-.ft-bd-card:not([data-ft-build]) { cursor: default; }
-.ft-bd-head { display: flex; align-items: baseline; gap: 6px; }
-.ft-bd-ic { font-size: 17px; line-height: 1; }
-.ft-bd-name { font-weight: 600; font-size: 12px; }
-.ft-bd-era { margin-left: auto; font-family: var(--mono, monospace); font-size: 8px; color: var(--dim, #a89f8e); white-space: nowrap; }
-.ft-bd-price { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
-.ft-bd-badge {
-  font-family: var(--mono, monospace); font-size: 11px; padding: 1px 6px;
-  border-radius: 999px; background: var(--gold-faint, rgba(201, 162, 39, 0.14));
-  border: 1px solid var(--gold-line, rgba(201, 162, 39, 0.35));
-}
-.ft-bd-out { margin-top: 5px; font-size: 10.5px; line-height: 1.4; }
-.ft-bd-desc { margin-top: 3px; font-size: 9.5px; line-height: 1.35; color: var(--dim, #a89f8e); }
-.ft-bd-reason { margin-top: 5px; font-size: 10px; color: var(--warn, #e8c886); }
-@media (max-width: 820px) {
-  /* Телефон: нижний лист поверх интерфейса, док в этот момент закрыт им —
-     крестик шторки всегда в зоне большого пальца. */
-  #ftBDrawer { left: 8px; right: 8px; width: auto; top: auto;
-    bottom: calc(8px + var(--safe-bottom, 0px)); height: 47vh;
-    transform: translateY(112%); }
-  #ftBDrawer.open { transform: none; }
-  .ft-bd-list { grid-template-columns: 1fr 1fr; }
-}`;
-    document.head.appendChild(st);
-  }
-  function ctxFromSim(sim2) {
-    if (!sim2) return {};
-    return {
-      techs: sim2.techs,
-      res: sim2.res,
-      costMult: typeof sim2.costMult === "function" ? sim2.costMult() : 1,
-      uniqueAlive: new Set((sim2.buildings || []).filter((b) => !b.destroyed).map((b) => b.id))
-    };
-  }
-  var state = { cat: "home", closed: false, lastList: "" };
-  function shellHtml() {
-    const tabs = CATEGORIES.map((c) => `<button type="button" class="ft-bd-tab" data-ft-cat="${c.key}">${c.ru}</button>`).join("");
-    return `<div class="ft-bd-top"><span class="ft-bd-title">🏗 Строительство</span><button type="button" class="ft-bd-x" data-ft-close aria-label="Свернуть шторку">×</button></div><div class="ft-bd-tabs">${tabs}</div><div class="ft-bd-list"></div>`;
-  }
-  function bindClicks2(root2) {
-    root2.addEventListener("click", (e) => {
-      const t = e.target.closest && e.target.closest("[data-ft-cat],[data-ft-close],[data-ft-build]");
-      if (!t) return;
-      if ("ftClose" in t.dataset) {
-        state.closed = true;
-        root2.classList.remove("open");
-        return;
-      }
-      if (t.dataset.ftCat) {
-        state.cat = t.dataset.ftCat;
-        state.lastList = "";
-        render2(root2);
-        return;
-      }
-      const id = t.dataset.ftBuild;
-      const F = window.__frontier;
-      if (!F || !F.hud || !F.hud.cb || typeof F.hud.cb.startPlacing !== "function") return;
-      try {
-        if (F.audio) F.audio.play("click");
-      } catch {
-      }
-      F.hud.cb.startPlacing(id);
-    });
-    document.addEventListener("keydown", (e) => {
-      if (e.key !== "Escape") return;
-      if (root2.classList.contains("open")) {
-        state.closed = true;
-        root2.classList.remove("open");
-      }
-    });
-  }
-  function render2(root2) {
-    const F = window.__frontier || {};
-    const hud2 = F.hud, sim2 = F.sim;
-    const ov = document.getElementById("overlay");
-    const started = !ov || ov.classList.contains("hidden");
-    const vis = drawerVisible({
-      tab: hud2 ? hud2.tab : "",
-      closed: state.closed,
-      started,
-      placing: !!(sim2 && sim2.placing)
-    });
-    if (hud2 && hud2.tab !== "build") state.closed = false;
-    root2.classList.toggle("open", vis);
-    if (!vis) return;
-    const ids = categoriesOfBuildings(BUILDINGS)[state.cat] || [];
-    const html = `<div class="ft-bd-list">${cardsHtml(ids, ctxFromSim(sim2))}</div>`;
-    if (html !== state.lastList) {
-      state.lastList = html;
-      const list = root2.querySelector(".ft-bd-list");
-      if (list) list.outerHTML = html;
-    }
-    for (const b of root2.querySelectorAll("[data-ft-cat]"))
-      b.classList.toggle("ft-bd-on", b.dataset.ftCat === state.cat);
-  }
-  function start4() {
-    ensureCss4();
-    let root2 = document.getElementById("ftBDrawer");
-    if (!root2) {
-      root2 = document.createElement("aside");
-      root2.id = "ftBDrawer";
-      root2.setAttribute("aria-label", "Шторка строительства");
-      root2.innerHTML = shellHtml();
-      document.body.appendChild(root2);
-      bindClicks2(root2);
-    }
-    setInterval(() => {
-      try {
-        render2(root2);
-      } catch {
-      }
-    }, 250);
-  }
-  if (typeof document !== "undefined" && typeof window !== "undefined" && !window.__frontierBuildingDrawer) {
-    window.__frontierBuildingDrawer = { version: 1 };
-    start4();
   }
 
   // app/src/ui/inspector.js
@@ -39802,7 +40258,7 @@ ${out}`;
     }
     return false;
   }
-  function cardHtml2(card) {
+  function cardHtml(card) {
     const rows = card.rows.map(
       (r) => `<div class="ft-insp-row"><span>${esc2(r.k)}</span><b${r.cls ? ` class="${r.cls}"` : ""}>${esc2(r.v)}</b></div>`
     ).join("");
@@ -39817,7 +40273,7 @@ ${out}`;
   <div class="ft-insp-body">${rows}</div>
   ${btns ? `<div class="ft-insp-btns">${btns}</div>` : ""}`;
   }
-  function ensureCss5() {
+  function ensureCss4() {
     if (document.getElementById("ft-inspector-css")) return;
     const st = document.createElement("style");
     st.id = "ft-inspector-css";
@@ -39959,7 +40415,7 @@ ${out}`;
       hide();
       return;
     }
-    const html = cardHtml2(card);
+    const html = cardHtml(card);
     if (!force && html === lastHtml) return;
     lastHtml = html;
     root.innerHTML = html;
@@ -40047,14 +40503,14 @@ ${out}`;
       }
     }, INSPECTOR_POLL_MS);
   }
-  function start5() {
-    ensureCss5();
+  function start4() {
+    ensureCss4();
     ensureRoot();
     bindInput();
   }
   if (typeof document !== "undefined" && typeof window !== "undefined" && !window.__frontierInspector) {
     window.__frontierInspector = { version: 1 };
-    start5();
+    start4();
   }
 
   // app/src/main.js
