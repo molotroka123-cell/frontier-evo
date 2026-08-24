@@ -8,13 +8,18 @@ import { PANELS, memoryPanel, mastersPanel, ghostPanel, intelOf, intelTrustWord,
 // Команда закладки чуда живёт в модуле чудес: HUD только передаёт клик.
 import * as WON from '../core/systems/wonders.js';
 import { renderDynastyPanel } from '../core/systems/link_dynasty.js';
-// Скин правой меню-панели подключается здесь, а не в main.js: вкладки собирает
-// именно hud.bind(), а скин только украшает уже готовые кнопки и сам ждёт их
-// появления (boot() опрашивает #sideTabs до старта) — порядок инициализации не
-// важен. Этот импорт ещё и единственный способ попасть в bundle: esbuild
-// проекта собирает всё от точки входа app/src/main.js → ui/hud.js, отдельных
-// списков модулей tools/build.mjs не хранит.
-import './menuskin.js';
+// СКИН ПРАВОЙ ПАНЕЛИ «ПО ОБРАЗЦУ C&C: GENERALS» живёт здесь же, в hud.js.
+// Прежний скин ui/menuskin.js («пилюли как на сайте») снят с импорта: два
+// скина на одну панель дрались бы за каскад, а группировка вкладок и иконки,
+// которыми он занимался, теперь делаются прямо в bind() (см. TAB_GROUPS).
+// Стили НЕ выносим в отдельный css-файл: при file:// fetch() соседних файлов
+// у страницы нет, а инжект <style> строкой работает офлайн всегда — тот же
+// приём, что у dock.js/inspector.js со своими ensureCss.
+//
+// Иконки зданий для компактных строк стройки берём из шторки строительства:
+// её таблица эмодзи уже протестирована на полноту (test-building-drawer),
+// дублировать её здесь значит получить две расходящиеся истины.
+import { iconOf } from './building_drawer.js';
 
 // Ядро не хранит скоростей добычи: производство размазано по жителям, погоде и
 // разовым событиям дня, а еда вообще списывается одним куском на смене суток.
@@ -47,6 +52,239 @@ const TABS = [
   { id: 'log', ru: 'Журнал', ic: '📖' },
 ];
 
+// Группировка вкладок ПК: подписи-разделители между плотными рядами квадратных
+// кнопок — как групповые рамки приборки в Generals. Кнопки остаются ПРЯМЫМИ
+// детьми #sideTabs: setTab() перебирает .children и сверяет dataset.tab,
+// разделители без dataset безопасно проходят мимо этого сравнения.
+const TAB_GROUPS = [
+  { cap: '',           tabs: ['build', 'research', 'people', 'dynasty'] },
+  { cap: 'Экономика',  tabs: ['market', 'industry', 'labor'] },
+  { cap: 'Война',      tabs: ['army', 'war'] },
+  { cap: 'Прочее',     tabs: ['diplo', 'politics', 'empire', 'goals', 'memory', 'log'] },
+];
+
+// ---------- скин «GENERALS»: единый <style> ----------
+// Почему строкой в JS, а не файлом/линком: страница обязана работать по
+// file:// офлайн (там fetch соседних css запрещён браузером), а esbuild-пайплайн
+// проекта для рантайм-строк css инлайна не имеет. Идемпотентность — по id
+// узла <style>: повторный вызов ничего не дублирует.
+const GNS_CSS = `
+/* ===== ПАНЕЛЬ-ШТАБ: тёмный графитово-зелёный металл ===== */
+/* Фаска 1px имитируется двумя внутренними тенями: светлая сверху/слева,
+   тёмная снизу/справа — так «металл» читается даже без картинок (офлайн). */
+#sidePanel {
+  background:
+    repeating-linear-gradient(135deg, rgba(255,255,255,.016) 0 1px, transparent 1px 5px),
+    linear-gradient(180deg, #20241d, #181b15 55%, #12140f);
+  border: 1px solid #000;
+  border-radius: 0;
+  box-shadow: inset 1px 1px 0 #414a37, inset -1px -1px 0 #050603, 0 10px 30px rgba(0,0,0,.55);
+}
+/* янтарная командная кромка — единственный «драгоценный» акцент панели */
+#sidePanel::after {
+  content: ''; position: absolute; left: 0; top: 0; right: 0; height: 2px; z-index: 2;
+  background: linear-gradient(90deg, #6b5626, #c8a24a 30%, #eecb76 50%, #c8a24a 70%, #6b5626);
+  pointer-events: none;
+}
+
+/* ===== ПЕРЕКЛЮЧАТЕЛЬ ВКЛАДОК: сетка квадратных кнопок-иконок ===== */
+#sidePanel #sideTabs {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px;
+  padding: 5px 5px 4px;
+  background:
+    repeating-linear-gradient(135deg, rgba(0,0,0,.14) 0 1px, transparent 1px 4px),
+    linear-gradient(180deg, #101309, #15180f);
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 1px 0 #39402f, 0 1px 0 rgba(200,162,74,.28);
+}
+/* группы ЭКОНОМИКА/ВОЙНА/ПРОЧЕЕ — тонкие подписи-линии на всю сетку */
+#sidePanel .gns-sep {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: 6px;
+  margin: 3px 1px 2px;
+  pointer-events: none; user-select: none;
+}
+#sidePanel .gns-sep::before, #sidePanel .gns-sep::after {
+  content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg, rgba(200,162,74,.06), rgba(200,162,74,.42));
+}
+#sidePanel .gns-sep::after { background: linear-gradient(90deg, rgba(200,162,74,.42), rgba(200,162,74,.06)); }
+#sidePanel .gns-sep span {
+  font-size: 9px; font-weight: 700; letter-spacing: 1.8px; text-transform: uppercase;
+  color: #ab8c49; white-space: nowrap;
+}
+/* сама кнопка: квадрат ~48px, эмодзи-иконка + подпись капсом под ней.
+   Подпись 8.5px, а не 9px: «ДИПЛОМАТИЯ» при 9px не влезает в ячейку 57px
+   и обрезалась многоточием — проверено на скриншоте первой итерации. */
+#sidePanel #sideTabs button.gns-tab {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-width: 0; min-height: 48px; padding: 4px 1px 3px;
+  background: linear-gradient(180deg, #272c22, #1d211a);
+  border: 1px solid #000; border-radius: 0;
+  box-shadow: inset 1px 1px 0 #3d4434, inset -1px -1px 0 #0a0c07;
+  color: #a7af99; font-size: 8px; font-weight: 700; line-height: 1.05;
+  letter-spacing: .1px; text-transform: uppercase;
+}
+#sidePanel #sideTabs .gns-tab .ic { font-size: 16px; line-height: 1; filter: saturate(.8); text-shadow: 0 1px 0 #000; }
+#sidePanel #sideTabs .gns-tab .lbl {
+  /* длинные слова («Дипломатия») не режем многоточием: сначала даём надписи
+     БОЛЬШЕ места в раскладке (108%), затем сжимаем отрисовку scaleX(.92) —
+     глифы становятся «приборочно» узкими, но читаются целиком */
+  width: 108%; margin-left: -4%;
+  transform: scaleX(.92); transform-origin: 50% 50%;
+  white-space: nowrap;
+}
+#sidePanel #sideTabs button.gns-tab:hover {
+  color: #e8e4d1; background: linear-gradient(180deg, #343b2d, #272c22);
+  box-shadow: inset 1px 1px 0 #4d5740, inset -1px -1px 0 #0a0c07;
+}
+/* активная — янтарная заливка со свечением и тёмным текстом: читается с любого
+   конца комнаты, как выбранная кнопка боевого интерфейса */
+#sidePanel #sideTabs button.gns-tab.active {
+  color: #191307;
+  background: linear-gradient(180deg, #eecb76, #c8a24a 48%, #a9842f);
+  border-color: #5c4715;
+  box-shadow: inset 0 0 0 1px #f4dc9a, inset 0 1px 0 rgba(255,255,255,.55), 0 0 12px rgba(232,194,104,.38);
+  text-shadow: 0 1px 0 rgba(255,255,255,.28);
+}
+#sidePanel #sideTabs button.gns-tab.active .ic { filter: none; }
+
+/* ===== СОДЕРЖИМОЕ: плотные военные секции вместо карточек-блогов ===== */
+#sidePanel #sideContent { padding: 7px 7px 12px; }
+#sideContent h4.group, #sheetContent h4.group {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+  color: #c8a24a; margin: 11px 1px 5px; padding: 0 0 4px;
+  border-bottom: 1px solid rgba(200,162,74,.38);
+}
+#sideContent h4.group::before {
+  content: ''; display: inline-block; width: 4px; height: 9px; margin-right: 7px;
+  background: #c8a24a; box-shadow: 1px 1px 0 #000;
+}
+/* секция: прямоугольная пластина с фасками, БЕЗ скруглений и теней-подвесов */
+#sideContent .card, #sheetContent .card {
+  background: linear-gradient(180deg, #242920, #1b1f18);
+  border: 1px solid #000; border-radius: 0;
+  box-shadow: inset 1px 1px 0 #39412f, inset -1px -1px 0 #0a0c07;
+  padding: 7px 9px; margin-bottom: 4px;
+}
+#sideContent .card:hover {
+  outline: 1px solid rgba(200,162,74,.45); outline-offset: -1px;
+  background: linear-gradient(180deg, #2b3125, #21261d);
+}
+#sideContent .card .ttl, #sheetContent .card .ttl { font-size: 12px; font-weight: 700; letter-spacing: .2px; align-items: baseline; gap: 8px; }
+#sideContent .card .ttl span, #sheetContent .card .ttl span { color: #ddd8c4; }
+#sideContent .card .cost, #sheetContent .card .cost { font-family: var(--mono); color: #d9b566; font-size: 10.5px; max-width: 62%; justify-content: flex-end; }
+#sideContent .card .desc, #sheetContent .card .desc { color: #96a08a; font-size: 10.5px; line-height: 1.35; margin-top: 2px; }
+#sideContent .card .reason, #sheetContent .card .reason { color: #ef9090; font-size: 10.5px; margin-top: 2px; }
+#sideContent .card.disabled, #sheetContent .card.disabled { opacity: .5; filter: saturate(.5); }
+
+/* строки «ключ — значение»: цифры справа моноширинным янтарным столбиком */
+#sideContent .kv, #sheetContent .kv {
+  padding: 3px 1px; font-size: 11.5px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+#sideContent .kv span:last-child, #sheetContent .kv span:last-child { color: #e0ba67; }
+
+/* ===== КОМПАКТНЫЙ РЯД СТРОЙКИ: иконка слева, цена справа, НЕ карточка ===== */
+.gns-row { display: flex; gap: 8px; align-items: flex-start; }
+.gns-row .gns-bic {
+  flex: none; width: 24px; height: 24px; margin-top: 1px;
+  display: flex; align-items: center; justify-content: center; font-size: 13px;
+  background: linear-gradient(180deg, #141810, #1d211a);
+  border: 1px solid #000;
+  box-shadow: inset 1px 1px 0 #39412f, inset -1px -1px 0 #050603;
+}
+.gns-row .gns-mid { flex: 1; min-width: 0; }
+.gns-row .desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.gns-row .cost { flex: none; margin-left: auto; max-width: 46%; text-align: right; white-space: normal; }
+
+/* ===== КНОПКИ: прямоугольные, фаска вместо скругления ===== */
+.btn {
+  border-radius: 0; letter-spacing: .4px;
+  background: linear-gradient(180deg, #2e352a, #22271e);
+  border: 1px solid #000;
+  box-shadow: inset 1px 1px 0 #414a36, inset -1px -1px 0 #0a0c07;
+}
+.btn:not(:disabled):hover {
+  transform: none;
+  background: linear-gradient(180deg, #394130, #282e23);
+  box-shadow: inset 1px 1px 0 #4d5740, inset -1px -1px 0 #0a0c07;
+}
+.btn:not(:disabled):active { transform: none; box-shadow: inset 0 2px 6px rgba(0,0,0,.55); }
+.btn.primary {
+  background: linear-gradient(180deg, #eecb76, #c8a24a 52%, #ab8631);
+  color: #181205; border: 1px solid #6b531a; border-radius: 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5), inset 0 -1px 0 rgba(0,0,0,.25);
+  text-shadow: 0 1px 0 rgba(255,255,255,.2);
+}
+.btn.danger {
+  background: linear-gradient(180deg, #33201c, #241713);
+  border: 1px solid #8f3a2c; color: #ef9a8c; border-radius: 0;
+  box-shadow: inset 1px 1px 0 #54291f, inset -1px -1px 0 #120a08;
+}
+
+/* полоса отношений и цели — под ту же палитру */
+#sideContent .relbar, #sheetContent .relbar { height: 6px; border-radius: 0; background: #101309; border: 1px solid #000; }
+#sideContent .obj, #sheetContent .obj { padding: 5px 3px; font-size: 11.5px; }
+
+/* ===== УЗКИЙ ТЁМНЫЙ СКРОЛЛБАР ===== */
+#sidePanel #sideContent {
+  scrollbar-width: thin; scrollbar-color: #39412f #101309;
+}
+#sidePanel #sideContent::-webkit-scrollbar { width: 10px; }
+#sidePanel #sideContent::-webkit-scrollbar-track { background: #101309; border-left: 1px solid #000; }
+#sidePanel #sideContent::-webkit-scrollbar-thumb {
+  background: #333b2a; border: 1px solid #000;
+  box-shadow: inset 1px 1px 0 #4a543c;
+}
+#sidePanel #sideContent::-webkit-scrollbar-thumb:hover { background: #46513a; }
+
+/* ===== НИЖНИЙ ШИТ (≤820px): тот же металл, лента квадратных вкладок ===== */
+#sheet {
+  background:
+    repeating-linear-gradient(135deg, rgba(255,255,255,.016) 0 1px, transparent 1px 5px),
+    linear-gradient(180deg, #20241d, #161912);
+  border-top: 2px solid #c8a24a; border-radius: 0;
+  box-shadow: 0 -10px 30px rgba(0,0,0,.55);
+}
+#sheet #sheetHandle::before { border-radius: 0; background: #c8a24a; opacity: .8; }
+#sheet #sheetTabs {
+  gap: 2px; padding: 4px 4px calc(4px + var(--safe-bottom, 0px));
+  background: linear-gradient(180deg, #101309, #15180f);
+  border-top: 1px solid #000; box-shadow: inset 0 1px 0 #39402f;
+}
+#sheet #sheetTabs button {
+  flex: 1 0 52px; min-height: 46px; padding: 4px 2px calc(4px + var(--safe-bottom, 0px));
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  background: linear-gradient(180deg, #272c22, #1d211a);
+  border: 1px solid #000; border-radius: 0;
+  box-shadow: inset 1px 1px 0 #3d4434, inset -1px -1px 0 #0a0c07;
+  color: #a7af99; font-size: 9px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase;
+}
+#sheet #sheetTabs button .ic { font-size: 15px; filter: saturate(.8); }
+#sheet #sheetTabs button.active {
+  color: #191307; background: linear-gradient(180deg, #eecb76, #c8a24a 48%, #a9842f);
+  border-color: #5c4715;
+  box-shadow: inset 0 0 0 1px #f4dc9a, 0 0 10px rgba(232,194,104,.35);
+}
+#sheet #sheetContent { scrollbar-width: thin; scrollbar-color: #39412f #101309; }
+#sheet #sheetContent::-webkit-scrollbar { width: 10px; }
+#sheet #sheetContent::-webkit-scrollbar-thumb { background: #333b2a; border: 1px solid #000; }
+`;
+
+// Инжект стиля скина. Вызывается на импорте модуля: hud.js всегда грузится из
+// браузера (main.js), а guard ниже страхует гипотетический headless-импорт.
+function ensureGeneralsSkin() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById('gns-skin')) return;   // идемпотентность по id
+  const st = document.createElement('style');
+  st.id = 'gns-skin';
+  st.textContent = GNS_CSS;
+  document.head.appendChild(st);
+}
+ensureGeneralsSkin();
+
 export class Hud {
   constructor(sim, renderer, saveSys, audio) {
     this.sim = sim;
@@ -77,14 +315,37 @@ export class Hud {
 
   bind(callbacks) {
     this.cb = callbacks;
-    // вкладки ПК
+    // вкладки ПК: квадратные кнопки-иконки по группам (см. TAB_GROUPS).
+    // Вкладка вне групп (на случай будущих) падает в последнюю — потерянных
+    // кнопок не бывает, как и дубликатов: собираем по id из TABS.
     this.el.sideTabs.innerHTML = '';
     this.el.sheetTabs.innerHTML = '';
+    const byId = {};
+    for (const t of TABS) byId[t.id] = t;
+    const grouped = new Set(TAB_GROUPS.flatMap(g => g.tabs));
+    for (const t of TABS) if (!grouped.has(t.id)) TAB_GROUPS[TAB_GROUPS.length - 1].tabs.push(t.id);
+    for (const g of TAB_GROUPS) {
+      if (g.cap) {
+        const sep = document.createElement('div');
+        sep.className = 'gns-sep';
+        sep.setAttribute('aria-hidden', 'true');
+        sep.innerHTML = `<span>${g.cap}</span>`;
+        this.el.sideTabs.appendChild(sep);
+      }
+      for (const id of g.tabs) {
+        const t = byId[id];
+        if (!t) continue;   // группа опережает TABS — пустое имя не рисуем
+        const b = document.createElement('button');
+        b.className = 'gns-tab';
+        b.dataset.tab = t.id;
+        b.innerHTML = `<span class="ic" aria-hidden="true">${t.ic}</span><span class="lbl">${t.ru}</span>`;
+        b.onclick = () => { this.audio.play('click'); this.setTab(t.id); };
+        this.el.sideTabs.appendChild(b);
+      }
+    }
+    // вкладки шита (телефон): лента тех же квадратов, структура прежняя —
+    // <span class="ic"> + подпись текстом
     for (const t of TABS) {
-      const b1 = document.createElement('button');
-      b1.textContent = t.ru; b1.dataset.tab = t.id;
-      b1.onclick = () => { this.audio.play('click'); this.setTab(t.id); };
-      this.el.sideTabs.appendChild(b1);
       const b2 = document.createElement('button');
       b2.innerHTML = `<span class="ic">${t.ic}</span>${t.ru}`;
       b2.dataset.tab = t.id;
@@ -787,10 +1048,17 @@ export class Hud {
       else if (built) reason = 'Уже построено';
       else if (lack) reason = `Не хватает: ${lack}${this.etaFor(def.cost)}`;
       const dis = locked || built || lack;
-      html += `<div class="card ${dis ? 'disabled' : ''}" data-tipk="b:${id}" ${!locked && !built ? `data-build="${id}"` : ''}>
-        <div class="ttl"><span>${def.name}</span><span class="cost">${this.costStr(def.cost)}</span></div>
-        <div class="desc">${def.desc}</div>
-        ${reason ? `<div class="reason">${reason}</div>` : ''}
+      // Компактный ряд: иконка в металлическом слоте слева, название и причина
+      // в середине, цена моноширинным столбиком справа. Классы .ttl/.desc/
+      // .reason сохранены — на них завязаны подсказки (data-tipk) и тосты.
+      html += `<div class="card gns-row ${dis ? 'disabled' : ''}" data-tipk="b:${id}" ${!locked && !built ? `data-build="${id}"` : ''}>
+        <span class="gns-bic" aria-hidden="true">${iconOf(id)}</span>
+        <div class="gns-mid">
+          <div class="ttl"><span>${def.name}</span></div>
+          <div class="desc">${def.desc}</div>
+          ${reason ? `<div class="reason">${reason}</div>` : ''}
+        </div>
+        <span class="cost">${this.costStr(def.cost)}</span>
       </div>`;
     }
     // Культ и Чудеса: одна карточка судьбы вместо сетки построек.
