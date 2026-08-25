@@ -12,10 +12,16 @@
 // core/systems/settlement_view.js (тот сам кэшируется и не мутирует sim).
 //
 // ЧТО ДЕЛАЕТ.
-//   1. Расстановка построек детерминирована: разброс берётся только из
-//      hash2(координаты поселения, соль) — тот же мир выглядит одинаково
-//      у всех игроков и во всех кадрах. Ни Math.random, ни sim.rng: вызов
-//      общего потока сдвинул бы симуляцию и поплыли бы сейвы.
+//   1. Расстановка построек детерминирована: ВЕСЬ разброс берётся из
+//      hash2(координаты поселения + сид мира, соль) — тот же мир выглядит
+//      одинаково у всех игроков и во всех кадрах. Ни Math.random, ни sim.rng:
+//      кадры у разных игроков идут с разной частотой, и каждый бросок общего
+//      потока сдвинул бы симуляцию — сейвы поплыли бы. Приём тот же, что в
+//      water.js, relief.js и vegetation.js: собственный хеш от координат.
+//      Из этого жребия берутся не только сдвиги, но и СОСТАВ улицы (какие
+//      спрайты и в каком порядке), зеркало всей раскладки, плотность посада,
+//      масштаб каждого дома ±14% и отражение его по горизонтали — иначе два
+//      соседних посёлка одного яруса выглядят клонами.
 //   2. Глубина: элементы сцены складываются в очередь и сортируются по Y —
 //      дальние дома рисуются раньше ближних, без клипов и пересечений.
 //   3. Знамя фракции печётся ОДИН раз на комбинацию (цвет, вариант выреза,
@@ -23,7 +29,15 @@
 //      12 записями, лишние вытесняются по возрасту.
 //   4. Ночью (opts.L.tint[3] > 0.2) на фасадах загораются тёплые окна,
 //      их яркость пропорциональна L.glow; у повреждённых поселений идёт
-//      дым над руинами.
+//      дым над руинами. У СПРАЙТОВЫХ домов светится та же карта свечения
+//      (spr.glow), что у построек игрока: чужой город ночью не проваливается
+//      в темноту, а горит теми же окнами.
+//   5. Зимой (sim.seasonIdx === 3) на крышах лежит снег: кромка силуэта
+//      печётся один раз в render/snow_roof.js и блитится поверх спрайта,
+//      площадь посёлка тоже белеет. Без этого город оставался летним
+//      посреди снега.
+//   6. Война (view.atWar) видна не только каймой знамени — красный кант на
+//      красной фракции неразличим, — но и частоколом копий у ворот.
 //
 // ГАБАРИТ: силуэт не шире 3.2z и не выше 2.6z над якорной клеткой — слой
 // гарантированно не залезает на подписи и панели соседей по кадру.
@@ -38,28 +52,102 @@ import { settlementView } from '../core/systems/settlement_view.js';
 // в тестах document подменён заглушкой ради выпечки знамён, и чужой кэш
 // там перехватил бы отрисовку. Нет кэша — рисуем процедурный дом как раньше.
 import { BUILDINGS } from '../core/data.js';
+import { snowRim } from './snow_roof.js';
+
+// Отражение по горизонтали вокруг вертикали cx. Трансформации есть не у всякого
+// контекста: в юнит-тестах слоя рисующий контекст — журнал вызовов без save/
+// scale, и слепой вызов уронил бы кадр. Нет трансформаций — рисуем как есть.
+function flipAround(ctx, cx, on, fn) {
+  if (!on || typeof ctx.save !== 'function' || typeof ctx.scale !== 'function'
+    || typeof ctx.translate !== 'function' || typeof ctx.restore !== 'function') { fn(); return; }
+  ctx.save();
+  ctx.translate(cx, 0);
+  ctx.scale(-1, 1);
+  ctx.translate(-cx, 0);
+  fn();
+  ctx.restore();
+}
 
 // Спрайтовый дом: рисует печёный спрайт игрока; false — вызывающий код
 // падает на старый процедурный дом (headless-среды без переданного кэша).
-function spriteHouse(ctx, cache, id, era, hx, footY, wPx) {
+//   flip  — отражение по горизонтали (жребий места, см. siteDice)
+//   night — 0..1, яркость ночных окон: блитится карта свечения спрайта,
+//           ровно та же, что светит у построек игрока
+//   snow  — класть ли снежную кромку на крышу (зима)
+function spriteHouse(ctx, cache, id, era, hx, footY, wPx, flip, night, snow) {
   if (!cache) return false;
   let spr = null;
   try { spr = cache.building(id, BUILDINGS[id] || {}, era, 1); } catch { return false; }
   if (!spr || !spr.cv) return false;
   const h = wPx * (spr.cv.height / spr.cv.width);
-  ctx.drawImage(spr.cv, Math.round(hx - wPx / 2), Math.round(footY - h), Math.round(wPx), Math.round(h));
+  const dx = Math.round(hx - wPx / 2), dy = Math.round(footY - h);
+  const dw = Math.round(wPx), dh = Math.round(h);
+  flipAround(ctx, hx, flip, () => {
+    ctx.drawImage(spr.cv, dx, dy, dw, dh);
+    if (snow) {
+      const rim = snowRim(spr, `${id}|${era}|${spr.cv.width}`);
+      if (rim) {
+        const pa = ctx.globalAlpha;
+        ctx.globalAlpha = pa * 0.88;
+        ctx.drawImage(rim, dx, dy, dw, dh);
+        ctx.globalAlpha = pa;
+      }
+    }
+    if (night > 0 && spr.glow) {
+      // Тот же приём, что у построек игрока (renderer._pendingGlow): карта
+      // свечения кладётся режимом lighter, свой градиент не заводится.
+      const pm = ctx.globalCompositeOperation, pa = ctx.globalAlpha;
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = pa * night;
+      ctx.drawImage(spr.glow, dx, dy, dw, dh);
+      ctx.globalCompositeOperation = pm || 'source-over';
+      ctx.globalAlpha = pa;
+    }
+  });
   return true;
 }
 
-// Состав улицы по ступени: деревня — изба, лесопилка и очаг историй; посад —
-// камень и рынок; столица — замок в первом слоте. Только СУЩЕСТВУЮЩИЕ id
-// игрока из BUILDINGS — никаких новых сущностей ради картинки.
+// Состав улицы по ступени. Раньше это был ЖЁСТКИЙ список, и все посёлки одного
+// яруса выходили клонами: те же здания в том же порядке. Теперь ярус задаёт
+// ПУЛ, из которого улица набирается перетасовкой по жребию места (streetIds).
+// Пул шире числа слотов — значит у соседей разный набор, а не только порядок.
+// Только СУЩЕСТВУЮЩИЕ id игрока из BUILDINGS: никаких новых сущностей ради
+// картинки, и арт у врага буквально тот же, что у игрока.
 const TOWN_IDS = {
-  1: ['hut', 'lumber', 'story_fire'],
-  2: ['hut', 'story_fire', 'lumber', 'hut', 'farm'],
-  3: ['stone_house', 'smithy', 'market', 'stone_house', 'hut', 'stone_house'],
-  4: ['castle', 'stone_house', 'market', 'stone_house', 'smithy', 'stone_house'],
+  1: ['hut', 'hut', 'lumber', 'story_fire', 'forager', 'hunter_lodge'],
+  2: ['hut', 'hut', 'story_fire', 'lumber', 'farm', 'granary', 'pasture', 'woodshed'],
+  3: ['stone_house', 'stone_house', 'hut', 'smithy', 'market', 'granary', 'workshop', 'mill'],
+  4: ['stone_house', 'stone_house', 'market', 'smithy', 'barracks', 'guild_hall', 'mill', 'granary'],
 };
+// Обязательное «лицо» яруса: столицу узнают по замку. Перетасовка его не
+// касается — он всегда есть и всегда занимает самый крупный жилой слот
+// (см. раздачу slotIds), иначе город перестаёт читаться как столица.
+const TOWN_HEAD = { 4: ['castle'] };
+
+// Улица конкретного посёлка: голова яруса плюс n построек из перетасованного
+// пула. Тасовка — Фишер–Йетс на жребии места, поэтому набор свой у каждого
+// посёлка и один и тот же во всех кадрах.
+function streetIds(tier, n, dice) {
+  const pool = (TOWN_IDS[tier] || TOWN_IDS[1]).slice();
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = (dice(200 + i) * (i + 1)) | 0;
+    const tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
+  }
+  const out = (TOWN_HEAD[tier] || []).slice();
+  for (let i = 0; out.length < n; i++) out.push(pool[i % pool.length]);
+  return out;
+}
+
+// Жребий места: та же пара координат, что кормит banner в settlement_view,
+// ПЛЮС сид мира. Без сида два мира с одинаковой геометрией застраивались бы
+// одинаково; с ним посёлок на (10,10) в разных партиях выглядит по-разному,
+// но внутри партии — всегда одинаково. Хеш общий (palette.hash2), как в
+// water.js/relief.js/vegetation.js.
+function siteDice(bx, by, seed) {
+  const sa = bx * 16 + 7 + (seed & 0x7fff) * 131;
+  const sb = by * 8 + 3 + ((seed >>> 15) & 0x7fff) * 61;
+  return (k) => hash2(sa + k * 131, sb + k * 61);
+}
 
 // Материалы двух «эпох» застройки. Дерево — ранние ступени, камень и черепица —
 // поздние; держим их локально, чтобы палитра посёлка не разъезжалась с палитрой
@@ -68,6 +156,9 @@ const WOOD_WALL = ['#9c7a48', '#8a6a3e'];
 const WOOD_ROOF = ['#6b4f35', '#5d442c'];
 const STONE_WALL = ['#b1aa9a', '#a29a89'];
 const TILE_ROOF = ['#a0522d', '#8a4326'];
+// Зимняя кровля процедурного дома: тот же снег, что у ориентиров и хвои,
+// с лёгким разнотоном — сплошная белизна читается как дыра в силуэте.
+const SNOW_ROOF = ['#eef4f8', '#dde6ee'];
 const WALL_STROKE = '#6f6a60';   // каменная стена города
 const DARK = '#3a2f22';          // двери и проёмы
 const RUIN_WALL = '#33302c';     // обугленный дом
@@ -129,6 +220,10 @@ function bakeBanner(color, variant, war) {
   c.closePath();
   c.fillStyle = color;
   c.fill();
+  // Тёмный кант по кромке полотнища. Без него светлые фракции (песочные,
+  // белые) теряются на снегу и песке ровно так же, как тёмные — в лесу:
+  // читается не цвет, а граница.
+  c.strokeStyle = 'rgba(28,22,18,0.75)'; c.lineWidth = 1.4; c.stroke();
   if (war) {
     // Красная кайма — войну видно до того, как различишь герб.
     c.strokeStyle = '#c0392b'; c.lineWidth = 2.5; c.stroke();
@@ -224,7 +319,7 @@ function house(ctx, hx, footY, w, hb, rh, wall, roof, stone, night, winA, r1, r2
 }
 
 // Башня: каменное тело, коническая кровля, бойница. Ставится по углам города.
-function tower(ctx, tx, footY, w, hb, night, winA, r1) {
+function tower(ctx, tx, footY, w, hb, night, winA, r1, winter) {
   contactShadow(ctx, tx, footY + 1, w * 0.8, Math.max(1.5, w * 0.3));
   ctx.fillStyle = '#9a948a';
   ctx.fillRect(tx - w / 2, footY - hb, w, hb);
@@ -233,7 +328,10 @@ function tower(ctx, tx, footY, w, hb, night, winA, r1) {
   ctx.lineTo(tx, footY - hb - hb * 0.42);
   ctx.lineTo(tx + w * 0.75, footY - hb);
   ctx.closePath();
-  ctx.fillStyle = '#6d4a3a';
+  // Зимой конус башни под снегом. Тон чуть холоднее чистой белизны: сплошной
+  // #fff рядом со спрайтами, у которых снег лежит только кромкой, читается
+  // как дыра в силуэте, а не как кровля.
+  ctx.fillStyle = winter ? '#d3dce4' : '#6d4a3a';
   ctx.fill();
   if (night > 0) {
     const ww = Math.max(1.5, w * 0.3);
@@ -272,6 +370,46 @@ function ruin(ctx, hx, footY, w, hb, time, rnd) {
     ctx.beginPath();
     ctx.arc(hx + w * 0.2 + sway, py, pr, 0, TAU);
     ctx.fill();
+  }
+}
+
+// Копья ополчения у ворот — признак ВОЙНЫ, читаемый при любом цвете фракции.
+// Красная кайма знамени (bakeBanner) на красной фракции неразличима: полотнище
+// и кант сливаются в одно пятно, и «воюет» приходится угадывать. Частокол
+// копий с бледными наконечниками читается на любом полотнище и на любой земле.
+// Ставится ПЕРЕД посёлком, поэтому лежит в самом конце очереди глубины.
+function warSpears(ctx, cx, footY, z, dice, color) {
+  const n = 6;
+  ctx.lineWidth = Math.max(1.2, z * 0.04);
+  for (let i = 0; i < n; i++) {
+    const px = cx + (i - (n - 1) / 2) * z * 0.23 + (dice(150 + i) - 0.5) * z * 0.08;
+    const hh = z * (0.62 + dice(160 + i) * 0.26);
+    const lean = (dice(170 + i) - 0.5) * z * 0.2;
+    const tipX = px + lean, tipY = footY - hh;
+    ctx.strokeStyle = '#3a2a1c';
+    ctx.beginPath();
+    ctx.moveTo(px, footY);
+    ctx.lineTo(tipX, tipY);
+    ctx.stroke();
+    // наконечник: светлое остриё — то, что видно на любом фоне
+    ctx.fillStyle = '#e2ddd2';
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY - z * 0.13);
+    ctx.lineTo(tipX - z * 0.04, tipY);
+    ctx.lineTo(tipX + z * 0.04, tipY);
+    ctx.closePath();
+    ctx.fill();
+    // На каждом втором копье — вымпел цвета фракции: строй сразу перестаёт
+    // читаться как продолжение частокола.
+    if (i % 2 === 1) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY + z * 0.03);
+      ctx.lineTo(tipX + z * 0.19, tipY + z * 0.1);
+      ctx.lineTo(tipX, tipY + z * 0.17);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 }
 
@@ -335,10 +473,13 @@ const SCENES = {
   ],
 };
 // Город: башни по углам (kind:'t') плюс семь домов — плотность столицы.
+// У башенных слотов ОБЯЗАТЕЛЬНА ширина: без неё w = undefined * z = NaN, и
+// башня уходила в никуда — fillRect(NaN) не рисует ничего. Угловые башни
+// столицы попросту не появлялись на экране, хотя слоты в сцене стояли.
 SCENES[4] = [
-  { dx: -1.3, dy: -0.55, kind: 't' }, { dx: -0.72, dy: -0.4, w: 0.58 },
+  { dx: -1.3, dy: -0.55, w: 0.46, kind: 't' }, { dx: -0.72, dy: -0.4, w: 0.58 },
   { dx: -0.05, dy: -0.52, w: 0.66 }, { dx: 0.62, dy: -0.36, w: 0.6 },
-  { dx: 1.3, dy: -0.5, kind: 't' }, { dx: -1.05, dy: 0.02, w: 0.54 },
+  { dx: 1.3, dy: -0.5, w: 0.46, kind: 't' }, { dx: -1.05, dy: 0.02, w: 0.54 },
   { dx: -0.28, dy: 0.16, w: 0.62 }, { dx: 0.45, dy: -0.02, w: 0.58 },
   { dx: 1.05, dy: 0.1, w: 0.52 },
 ];
@@ -368,6 +509,9 @@ export function drawFactionTown(ctx, sx, sy, z, f, s, sim, opts = {}) {
   // спрайты не печём, чтобы не перехватывать проверяемый процедурный путь.
   const cache = opts.sprites || null;
   const era = Math.max(0, Math.min(9, sim.eraIndex | 0));
+  // Зима: 3-й сезон в TERRAIN/SEASONS. Земля и хвоя к этому моменту уже белые —
+  // город обязан побелеть вместе с ними, иначе он «наклеен» на снег.
+  const winter = (sim.seasonIdx | 0) === 3;
 
   const ax = sx + z * 0.5;      // ось поселения — центр якорной клетки
   const gy = sy + z;            // подошва — низ якорной клетки
@@ -390,22 +534,32 @@ export function drawFactionTown(ctx, sx, sy, z, f, s, sim, opts = {}) {
   }
 
   const bx = s.x | 0, by = s.y | 0;
-  // Детерминированный разброс: та же пара координат, что кормит banner в
-  // settlement_view, поэтому «приметы места» везде согласованы.
-  const rnd = (k) => hash2(bx * 16 + k * 131 + 7, by * 8 + k * 61 + 3);
+  // Детерминированный разброс: координаты поселения (та же пара, что кормит
+  // banner в settlement_view, — «приметы места» везде согласованы) плюс сид
+  // мира. Единственный источник случайности в этом файле.
+  const wseed = (sim.world && (sim.world.seed | 0)) || 0;
+  const rnd = siteDice(bx, by, wseed);
+
+  // --- облик посёлка целиком: три жребия на поселение, а не на дом ----------
+  // mir — зеркало всей раскладки (та же сцена, но улица идёт в другую сторону);
+  // spread/depth — насколько посад раскинулся вширь и вглубь. Вместе с
+  // перетасовкой улицы это и разводит соседей одного яруса.
+  const mir = rnd(101) < 0.5 ? -1 : 1;
+  const spread = 0.9 + rnd(103) * 0.22;
+  const depth = 0.86 + rnd(105) * 0.3;
 
   // --- дальний план: земля посёлка, пока ничего не перекрыто ---------------
   if (tier === 0) {
     // пепелище кочевья: вытоптанный круг
-    ctx.fillStyle = 'rgba(110,95,72,0.25)';
+    ctx.fillStyle = winter ? 'rgba(226,234,240,0.34)' : 'rgba(110,95,72,0.25)';
     ctx.beginPath(); ctx.ellipse(ax, gy - z * 0.05, z * 0.85, z * 0.3, 0, 0, TAU); ctx.fill();
   } else if (tier < 4) {
-    // утоптанная площадь деревни/посада
-    ctx.fillStyle = 'rgba(122,102,72,0.18)';
+    // утоптанная площадь деревни/посада; зимой — укатанный снег
+    ctx.fillStyle = winter ? 'rgba(222,232,238,0.32)' : 'rgba(122,102,72,0.18)';
     ctx.beginPath(); ctx.ellipse(ax, gy - z * 0.12, z * 1.3, z * 0.44, 0, 0, TAU); ctx.fill();
   } else {
     // вымощенная площадь города
-    ctx.fillStyle = 'rgba(196,186,166,0.3)';
+    ctx.fillStyle = winter ? 'rgba(232,240,246,0.42)' : 'rgba(196,186,166,0.3)';
     ctx.fillRect(ax - z * 0.55, gy - z * 0.28, z * 1.1, z * 0.5);
   }
 
@@ -457,30 +611,60 @@ export function drawFactionTown(ctx, sx, sy, z, f, s, sim, opts = {}) {
     for (let i = 0; i < winN; i++) winCounts[i % nB]++;
     // Повреждение бьёт по одному конкретному дому — второму слоту сцены.
     const ruinIdx = damaged ? 1 % nB : -1;
+    // Улица: своя на каждый посёлок (см. streetIds). Считается ОДИН раз до
+    // цикла — иначе тасовка шла бы на каждый дом и состав поплыл бы.
+    // Раздаётся ТОЛЬКО жилым слотам: башенные (kind:'t') рисуются процедурно,
+    // и если отдать им запись, «лицо» яруса (замок столицы) достанется
+    // невидимке — именно так замок и пропадал из города.
+    const houseIdx = [];
+    for (let i = 0; i < nB; i++) if (live[i].kind !== 't') houseIdx.push(i);
+    const ids = streetIds(tier, houseIdx.length, rnd);
+    const head = (TOWN_HEAD[tier] || [])[0] || '';
+    // Замок ставим в САМЫЙ КРУПНЫЙ слот: столица должна опознаваться главным
+    // силуэтом, а не случайной хижиной с краю.
+    let big = houseIdx.length ? houseIdx[0] : -1;
+    for (const i of houseIdx) if ((live[i].w || 0) > (live[big].w || 0)) big = i;
+    const slotIds = new Array(nB).fill('');
+    const tail = head ? ids.slice(1) : ids;
+    let k = 0;
+    for (const i of houseIdx) {
+      if (head && i === big) { slotIds[i] = head; continue; }
+      slotIds[i] = tail.length ? tail[(k++) % tail.length] : (head || 'hut');
+    }
 
     for (let i = 0; i < nB; i++) {
       const sl = live[i];
-      const r0 = rnd(i * 4 + 1), r1 = rnd(i * 4 + 2), r2 = rnd(i * 4 + 3);
-      const hx = ax + (sl.dx + (r0 - 0.5) * 0.14) * z;
-      const footY = gy + sl.dy * z;
-      const w = sl.w * z;
-      const hb = (sl.barn ? 0.3 : 0.34 + r1 * 0.1) * z;
+      const r0 = rnd(i * 6 + 1), r1 = rnd(i * 6 + 2), r2 = rnd(i * 6 + 3);
+      const r3 = rnd(i * 6 + 4), r4 = rnd(i * 6 + 5);
+      // Положение: зеркало всей сцены, раскид посада и собственный сдвиг дома.
+      // Итог зажимаем в ±1.3 клетки — обещанный габарит 3.2z считается от него,
+      // и любой жребий обязан оставаться внутри рамки.
+      const dxv = Math.max(-1.3, Math.min(1.3, sl.dx * mir * spread + (r0 - 0.5) * 0.2));
+      const hx = ax + dxv * z;
+      const footY = gy + sl.dy * z * depth;
+      // Масштаб дома ±14% и своя высота сруба: одинаковых домов в посёлке нет.
+      const sc = 0.87 + r3 * 0.27;
+      const w = sl.w * z * sc;
+      const hb = (sl.barn ? 0.3 : 0.34 + r1 * 0.1) * z * (0.92 + r3 * 0.16);
       const rh = w * 0.52;
+      // Отражение по горизонтали: тот же спрайт, но дом «смотрит» в другую
+      // сторону — соседние посёлки перестают быть покадровой копией.
+      const flip = r4 < 0.5;
       const stone = tier >= 3;
       const wall = stone ? STONE_WALL[i % 2] : WOOD_WALL[(i + ((r0 * 2) | 0)) % 2];
-      const roof = stone ? TILE_ROOF[i % 2] : WOOD_ROOF[(i + 1) % 2];
+      // Зимой кровля процедурного дома выбеливается вместе с крышами спрайтов.
+      const roof = winter ? SNOW_ROOF[i % 2] : (stone ? TILE_ROOF[i % 2] : WOOD_ROOF[(i + 1) % 2]);
       const wc = winCounts[i];
       const isRuin = i === ruinIdx;
+      const id = slotIds[i];
       q.push({
         y: footY, fn: () => {
           if (isRuin) ruin(ctx, hx, footY, w, hb + rh * 0.5, time, rnd);
-          else if (sl.kind === 't') tower(ctx, hx, footY, w * 0.55, hb + rh * 0.9, night, winA, r1);
+          else if (sl.kind === 't') tower(ctx, hx, footY, w * 0.44, hb + rh * 0.9, night, winA, r1, winter);
           else {
             // Дом — спрайт игрока (единый арт с городом игрока), состав
-            // улицы по ступени города. Без кэша — старый процедурный дом.
-            const ids = TOWN_IDS[tier] || TOWN_IDS[1];
-            const id = ids[i % ids.length];
-            if (!spriteHouse(ctx, cache, id, era, hx, footY, w * 1.25)) {
+            // улицы свой у каждого посёлка. Без кэша — процедурный дом.
+            if (!spriteHouse(ctx, cache, id, era, hx, footY, w * 1.25, flip, night, winter)) {
               house(ctx, hx, footY, w, hb, rh, wall, roof, stone, wc > 0 ? night : 0, winA, r1, r2);
             }
           }
@@ -534,6 +718,13 @@ export function drawFactionTown(ctx, sx, sy, z, f, s, sim, opts = {}) {
         },
       });
     }
+  }
+
+  // --- война: ополчение у ворот -------------------------------------------
+  // Ставим ПЕРЕД посёлком (южная кромка площади), поэтому Y максимальный —
+  // копья рисуются последними и не тонут за домами.
+  if (atWar) {
+    q.push({ y: gy + z * 0.4, fn: () => warSpears(ctx, ax - z * 0.15, gy + z * 0.3, z, rnd, f.def.color) });
   }
 
   // --- знамя фракции: шест с полотнищем, у города — пара ------------------

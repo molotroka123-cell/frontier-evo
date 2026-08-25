@@ -20,6 +20,7 @@ import { FxLayer } from './fx.js';
 import { SelectLayer } from './select.js';
 import { IconLayer } from './icons.js';
 import { CityLights } from './city_lights.js';
+import { snowRim } from './snow_roof.js';
 import { MinimapLayer } from './minimap.js';
 import { lightAt, hash2, TERRAIN } from './palette.js';
 // Отряды на карте: читаем только чистые функции army.js (без DOM, без rng).
@@ -773,6 +774,24 @@ export class Renderer {
     this.shadows.building(ctx, spr, dx, dy, dw, dh);
 
     ctx.drawImage(spr.cv, dx, dy, dw, dh);
+    // Зимой на кровле снег: та же кромка силуэта, что у городов фракций
+    // (render/snow_roof.js). SpriteCache печёт спрайт по ключу
+    // «id|эпоха|размер|детализация» — сезона в ключе нет, поэтому дом стоял
+    // летним посреди снега. Снег кладётся отдельным блитом поверх, выпечка
+    // одна на постройку.
+    //
+    // БЕЗ ЭТОГО БЛОКА У ВРАГА КРЫШИ В СНЕГУ, А У НАС НЕТ: слой городов
+    // фракций уже кладёт кромку, и расхождение видно, когда оба города
+    // попадают в один кадр.
+    if ((sim.seasonIdx | 0) === 3) {
+      const rim = snowRim(spr, `${b.id}|${e}|${spr.cv.width}`);
+      if (rim) {
+        const pa = ctx.globalAlpha;
+        ctx.globalAlpha = pa * 0.88;
+        ctx.drawImage(rim, dx, dy, dw, dh);
+        ctx.globalAlpha = pa;
+      }
+    }
     // Самозатенение ложится ПОВЕРХ спрайта и гасит грани, отвёрнутые от света.
     this.shadows.selfShade(ctx, spr, dx, dy, dw, dh);
     this._pendingGlow.push({ spr, dx, dy, dw, dh });

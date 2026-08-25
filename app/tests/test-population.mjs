@@ -320,5 +320,71 @@ t('работает поверх живой Simulation, не ломая ядро
   console.log(`   день ${a.sim.day}: жителей ${a.sim.villagers.length}, рождений ${a.state.stats.births}, смертей ${a.state.stats.deaths}`);
 });
 
+// ---------- Рост населения в живом ядре: от чего он глох ----------
+// Замер до починки (12000 дней, без игрока): сид 99 — минимум 1, финал 7 при
+// НУЛЕ настоящих рождений; ядро подсовывало «новорождённых» медианного
+// возраста 52 года, 91% из них исчезали за первые 500 дней.
+
+t('новый житель приходит в рабочем возрасте, а не стариком', () => {
+  const sim = new Simulation(7);
+  const before = sim.villagers.length;
+  for (let i = 0; i < 200; i++) sim.spawnVillager(sim.world.startX, sim.world.startY);
+  const ages = sim.villagers.slice(before).map(v => v.age);
+  const max = Math.max(...ages), min = Math.min(...ages);
+  must(min >= 1500, `кто-то родился младенцем-работником: ${min}`);
+  // Окно материнства модуля — 18–42 года (1800–4200 единиц). Прежний ядерный
+  // разброс 1800–9000 выбрасывал две трети новичков за него.
+  must(max <= 4200, `пришёл человек ${Math.floor(max / 100)} лет — за окном материнства`);
+  const mid = ages.slice().sort((a, b) => a - b)[ages.length >> 1];
+  must(mid <= 3000, `медианный возраст новичка ${Math.floor(mid / 100)} лет — слишком стар`);
+});
+
+t('возраст растёт ровно на день в день (не вдвое)', () => {
+  const sim = new Simulation(7);
+  const v = sim.villagers[0];
+  const a0 = v.age, d0 = sim.day;
+  for (let i = 0; i < 120; i++) sim.tick(1);
+  must(v.hp > 0, 'подопытный житель не дожил до конца замера');
+  must(v.age - a0 === sim.day - d0,
+    `за ${sim.day - d0} дней возраст вырос на ${v.age - a0}`);
+});
+
+t('беда забирает не только последнего пришедшего', () => {
+  const sim = new Simulation(7);
+  for (let i = 0; i < 14; i++) sim.spawnVillager(sim.world.startX, sim.world.startY);
+  const order = sim.villagers.map(v => v.name);
+  const gone = [];
+  for (let i = 0; i < 6; i++) { const v = sim.takeVillager(); if (v) gone.push(v.name); }
+  must(gone.length === 6, 'takeVillager не вернул жителей');
+  must(gone.join('|') !== order.slice(-6).reverse().join('|'),
+    'забрали ровно хвост массива — это и был старый villagers.pop()');
+  must(sim.villagers.length === order.length - 6, 'жители не удалились из массива');
+});
+
+t('за 3000 дней поселение не вымирает и не перерастает жильё', () => {
+  const sim = new Simulation(99);
+  let min = sim.villagers.length, over = 0, worst = 0;
+  for (let d = 0; d < 3000; d++) {
+    sim.tick(1);
+    const pop = sim.villagers.length, cap = sim.housingCap();
+    if (pop < min) min = pop;
+    if (pop > cap) { over++; worst = Math.max(worst, pop - cap); }
+  }
+  must(min > 0, 'поселение вымерло');
+  must(min >= 4, `провал населения до ${min} — прежняя яма вернулась`);
+  must(sim.villagers.length >= 5, `финал ${sim.villagers.length}`);
+  // Потолок — жильё. Событийные подселения и зимние пометки могут дать
+  // одиночный перебор, но постоянного «население выше домов» быть не должно.
+  must(worst <= 2, `население переросло жильё на ${worst}`);
+  console.log(`   сид 99: минимум ${min}, финал ${sim.villagers.length}/${sim.housingCap()}, дней сверх жилья ${over}`);
+});
+
+t('потолок роста назван игроку словами', () => {
+  const sim = new Simulation(99);
+  for (let d = 0; d < 1200; d++) sim.tick(1);
+  must(sim.chronicle.some(c => /Все места в домах заняты/.test(c.text)),
+    'молчаливый потолок: в летописи нет строки о нехватке жилья');
+});
+
 console.log(`\nИтого: ${pass} прошло, ${fail} упало`);
 process.exit(fail ? 1 : 0);

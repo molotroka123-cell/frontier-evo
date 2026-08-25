@@ -302,6 +302,71 @@ const NIGHT = { L: { mul: 0.42, tint: [22, 34, 86, 0.46], sunAz: -2.36, glow: 1,
     && !/createRadialGradient/.test(code) && !/\.filter\s*=/.test(code));
   t('слой тянет вид из settlement_view и hash2 из palette',
     src.includes("from '../core/systems/settlement_view.js'") && src.includes("hash2 } from './palette.js'"));
+
+  // --- 20..25: РАЗНООБРАЗИЕ ПРОТИВ ДЕТЕРМИНИЗМА ----------------------------
+  // Два требования тянут в разные стороны и потому проверяются вместе:
+  //   • соседние поселения ОДНОГО яруса не должны быть клонами;
+  //   • одно и то же поселение обязано выглядеть одинаково в любом кадре,
+  //     у любого игрока и после перезагрузки сейва.
+  // Единственный законный источник разнообразия — хеш от координат и
+  // sim.world.seed (см. siteDice): ни Math.random, ни общий поток sim.
+  //
+  // Подставной кэш спрайтов возвращает пустышку и ЗАПИСЫВАЕТ запрошенные id —
+  // так виден сам состав улицы, а не только геометрия.
+  function stubSprites(seen) {
+    return {
+      building(id) {
+        seen.push(id);
+        return { cv: { width: 64, height: 80 } };
+      },
+    };
+  }
+  const layout = (x, y, tier, seed = 99) => {
+    const m = makeSim(freshView({ tier }), x, y);
+    m.sim.world.seed = seed;
+    const seen = [], log = [];
+    drawFactionTown(recorder(log), SX, SY, Z, m.f, m.s, m.sim, { time: 1.5, sprites: stubSprites(seen) });
+    return { geom: JSON.stringify(log), street: seen.join(','), seen };
+  };
+
+  // Шесть разных мест на каждом ярусе — все раскладки обязаны различаться.
+  let cloneAt = '', sameStreet = '';
+  for (const tier of [1, 2, 3, 4]) {
+    const spots = [[300, 200], [301, 200], [300, 201], [317, 244], [58, 91], [140, 7]];
+    const geoms = new Set(), streets = new Set();
+    for (const [x, y] of spots) {
+      const L = layout(x, y, tier);
+      geoms.add(L.geom); streets.add(L.street);
+    }
+    if (geoms.size !== spots.length) cloneAt += ` t${tier}:${geoms.size}/${spots.length}`;
+    // Состав улицы обязан различаться хотя бы у трёх мест из шести: пул шире
+    // числа слотов, и полное совпадение выдало бы возврат к жёсткому списку.
+    if (streets.size < 3) sameStreet += ` t${tier}:${streets.size}`;
+  }
+  t('поселения одного яруса на РАЗНЫХ координатах дают разные раскладки', cloneAt === '', cloneAt);
+  t('состав улицы тоже разный, а не только сдвиги', sameStreet === '', sameStreet);
+
+  // Одно и то же поселение — покадрово одинаковое. Между прогонами рисуются
+  // чужие посёлки: скрытого состояния между вызовами быть не должно.
+  const ref = layout(317, 244, 3);
+  layout(58, 91, 4); layout(300, 200, 1);
+  const again = layout(317, 244, 3);
+  layout(140, 7, 2);
+  const third = layout(317, 244, 3);
+  t('одно и то же поселение — всегда одна и та же раскладка',
+    ref.geom === again.geom && ref.geom === third.geom);
+  t('и всегда та же улица', ref.street === again.street && ref.street === third.street);
+
+  // Сид мира входит в жребий: те же координаты в другом мире застроены иначе.
+  const w1 = layout(317, 244, 3, 99), w2 = layout(317, 244, 3, 4242);
+  t('другой sim.world.seed → другая раскладка на тех же координатах',
+    w1.geom !== w2.geom || w1.street !== w2.street);
+
+  // «Лицо» яруса на месте: столицу должно быть видно по замку, и ровно по
+  // одному — раньше запись доставалась башенному слоту и замок пропадал.
+  const cap = layout(317, 244, 4);
+  t('в столице (t4) ровно один замок, и он нарисован спрайтом',
+    cap.seen.filter(id => id === 'castle').length === 1, cap.seen.join(','));
 }
 
 console.log(`=== ${ok} OK / ${fail} FAIL ===`);

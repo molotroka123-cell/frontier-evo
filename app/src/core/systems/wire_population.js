@@ -194,9 +194,17 @@ export function wirePopulationHappyMod(sim) {
 function _tickMigration(sim, w) {
   const pop = aliveCount(sim);
   const happy = sim._happy ?? sim.happiness();
-  if (!(happy > 45 && sim.res.food > pop * 3 && pop < sim.housingCap())) return 0;
+  // Порог 45 достижим не на всякой карте: там, где идёт война и злые соседи,
+  // счастье годами стоит в полосе 33–44 (замерено на сидах 99 и 4242: 39 и 35),
+  // и приток не включался ни разу за 12000 дней. Берём 40 — тот же порог «дела
+  // идут сносно», по которому ядро судит о росте в остальных местах.
+  if (!(happy > 40 && sim.res.food > pop * 3 && pop < sim.housingCap())) return 0;
   let chance = MIGRATE_CHANCE;
   if (sim.hasBuilding('market')) chance *= 1.3;   // слух о сытом месте идёт по торговым путям
+  // Пока поселение крошечное, а домов вдоволь, слух о свободной земле работает
+  // сильнее — так деревня переживает смерть стартового поколения. Потолок тот
+  // же, что и у рождений: свободное жильё. Заполнится — приток сам иссякнет.
+  if (pop < 10 && sim.housingCap() - pop >= 3) chance *= 2;
   if (!sim.rng.chance(chance)) return 0;
   const v = _addSettler(sim, 'сам пришёл на дым костра');
   if (!v) return 0;
@@ -210,14 +218,11 @@ function _addSettler(sim, deed) {
   const before = sim.villagers.length;
   const c = sim.buildings.find(b => b.id === 'campfire' && !b.destroyed)
     || { x: sim.world.startX, y: sim.world.startY };
-  sim.spawnVillager(c.x + sim.rng.range(-1, 1), c.y + sim.rng.range(-1, 1));
+  // В дорогу снимаются молодые: 17–32 года. Возраст задаём третьим аргументом
+  // spawnVillager — ядро больше не выдаёт своих 18–90 лет никому.
+  sim.spawnVillager(c.x + sim.rng.range(-1, 1), c.y + sim.rng.range(-1, 1), sim.rng.int(1700, 3200));
   if (sim.villagers.length === before) return null;
   const v = sim.villagers[sim.villagers.length - 1];
-  // spawnVillager раздаёт возраст 18–90 лет: это годится для стартовой шестёрки,
-  // но не для приезжих. С таким разбросом поселение за полвека превращалось в
-  // дом престарелых — половина пришлых сразу старики, детей рожать некому.
-  // В дорогу снимаются молодые: 17–32 года.
-  v.age = sim.rng.int(1700, 3200);
   Pop.syncVillagers(sim.pop, sim.villagers, sim.rng);
   if (deed) Pop.recordDeed(v, deed);
   return v;

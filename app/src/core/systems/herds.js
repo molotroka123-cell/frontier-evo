@@ -267,14 +267,22 @@ export function restoreHerds(data) {
   if (!data || typeof data !== 'object') return s;
   s.day = num(data.day, -1);
   s.nextId = Math.max(1, Math.floor(num(data.nextId, 1)));
+  // Ключи кладём в том порядке, в каком они лежали в сейве, а не в порядке
+  // KINDS. Эти три словаря наполняются по ходу партии (чей зверь первым попал
+  // в журнал, того и первый ключ), и восстановление «по списку видов» меняло
+  // порядок ключей: значения совпадали, а JSON — нет. Круг
+  // serialize→deserialize→serialize на сиде 11 / эпоха 3 расходился ровно здесь
+  // (sys.herds.lastSaid: mammoth,deer,… против deer,mammoth,…). Неизвестный вид
+  // по-прежнему отбрасывается.
+  const known = new Set(KINDS);
   if (data.seen && typeof data.seen === 'object') {
-    for (const k of KINDS) if (data.seen[k]) s.seen[k] = true;
+    for (const k of Object.keys(data.seen)) if (known.has(k) && data.seen[k]) s.seen[k] = true;
   }
   if (data.gone && typeof data.gone === 'object') {
-    for (const k of KINDS) if (Number.isFinite(data.gone[k])) s.gone[k] = data.gone[k];
+    for (const k of Object.keys(data.gone)) if (known.has(k) && Number.isFinite(data.gone[k])) s.gone[k] = data.gone[k];
   }
   if (data.lastSaid && typeof data.lastSaid === 'object') {
-    for (const k of KINDS) if (Number.isFinite(data.lastSaid[k])) s.lastSaid[k] = data.lastSaid[k];
+    for (const k of Object.keys(data.lastSaid)) if (known.has(k) && Number.isFinite(data.lastSaid[k])) s.lastSaid[k] = data.lastSaid[k];
   }
   if (Array.isArray(data.hunts)) {
     for (const r of data.hunts) {

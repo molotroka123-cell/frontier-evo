@@ -4004,9 +4004,10 @@ h4.group {
   function _tickMigration(sim2, w) {
     const pop = aliveCount(sim2);
     const happy = sim2._happy ?? sim2.happiness();
-    if (!(happy > 45 && sim2.res.food > pop * 3 && pop < sim2.housingCap())) return 0;
+    if (!(happy > 40 && sim2.res.food > pop * 3 && pop < sim2.housingCap())) return 0;
     let chance = MIGRATE_CHANCE;
     if (sim2.hasBuilding("market")) chance *= 1.3;
+    if (pop < 10 && sim2.housingCap() - pop >= 3) chance *= 2;
     if (!sim2.rng.chance(chance)) return 0;
     const v = _addSettler(sim2, "сам пришёл на дым костра");
     if (!v) return 0;
@@ -4016,10 +4017,9 @@ h4.group {
   function _addSettler(sim2, deed) {
     const before = sim2.villagers.length;
     const c = sim2.buildings.find((b) => b.id === "campfire" && !b.destroyed) || { x: sim2.world.startX, y: sim2.world.startY };
-    sim2.spawnVillager(c.x + sim2.rng.range(-1, 1), c.y + sim2.rng.range(-1, 1));
+    sim2.spawnVillager(c.x + sim2.rng.range(-1, 1), c.y + sim2.rng.range(-1, 1), sim2.rng.int(1700, 3200));
     if (sim2.villagers.length === before) return null;
     const v = sim2.villagers[sim2.villagers.length - 1];
-    v.age = sim2.rng.int(1700, 3200);
     syncVillagers(sim2.pop, sim2.villagers, sim2.rng);
     if (deed) recordDeed(v, deed);
     return v;
@@ -5142,10 +5142,10 @@ h4.group {
         for (const g2 of GOODS) st.prices[g2] *= 0.75;
         sim2.res.gold = round22(sim2.res.gold * 0.88);
         st.stability = clamp2(st.stability - 20, 0, 100);
-        st.heat = -15;
+        st.heat = -45;
         events.push({ text: "Пузырь лопнул! Цены рухнули, часть сбережений сгорела.", type: "bad" });
       }
-      st.stability += clamp2(70 - st.stability, -0.5, 0.5);
+      st.stability += clamp2((70 - st.stability) * 0.05, -0.5, 2);
       st.lastGold = sim2.res.gold;
       st.lastReport = {
         day: sim2.day,
@@ -16965,14 +16965,15 @@ h4.group {
     if (!data || typeof data !== "object") return s;
     s.day = num14(data.day, -1);
     s.nextId = Math.max(1, Math.floor(num14(data.nextId, 1)));
+    const known = new Set(KINDS);
     if (data.seen && typeof data.seen === "object") {
-      for (const k of KINDS) if (data.seen[k]) s.seen[k] = true;
+      for (const k of Object.keys(data.seen)) if (known.has(k) && data.seen[k]) s.seen[k] = true;
     }
     if (data.gone && typeof data.gone === "object") {
-      for (const k of KINDS) if (Number.isFinite(data.gone[k])) s.gone[k] = data.gone[k];
+      for (const k of Object.keys(data.gone)) if (known.has(k) && Number.isFinite(data.gone[k])) s.gone[k] = data.gone[k];
     }
     if (data.lastSaid && typeof data.lastSaid === "object") {
-      for (const k of KINDS) if (Number.isFinite(data.lastSaid[k])) s.lastSaid[k] = data.lastSaid[k];
+      for (const k of Object.keys(data.lastSaid)) if (known.has(k) && Number.isFinite(data.lastSaid[k])) s.lastSaid[k] = data.lastSaid[k];
     }
     if (Array.isArray(data.hunts)) {
       for (const r of data.hunts) {
@@ -18867,15 +18868,17 @@ h4.group {
       if (g2) g2.used = true;
     }
     // ---------- Население ----------
-    spawnVillager(x, y) {
+    spawnVillager(x, y, age0 = null) {
       const name = this.rng.pick(NAMES) + " " + this.rng.pick(NICKNAMES);
+      const roll2 = this.rng.int(1600, 3400);
+      const age = age0 == null ? roll2 : age0;
       this.villagers.push({
         name,
         x,
         y,
         tx: x,
         ty: y,
-        age: this.rng.int(1800, 9e3),
+        age,
         job: "idle",
         target: null,
         path: null,
@@ -18883,6 +18886,25 @@ h4.group {
         hp: 100,
         home: null
       });
+      return this.villagers[this.villagers.length - 1];
+    }
+    // Кого забирает беда (голод, мор, рейд) или безысходность (эмиграция).
+    // БЫЛО: villagers.pop() во всех четырёх местах — то есть всегда ПОСЛЕДНИЙ
+    // добавленный, а последний добавленный — это всегда новорождённый или
+    // только что пришедший. Поселение физически не могло накопить людей: любая
+    // потеря съедала именно прибыль. Здесь жребий кидает rng (детерминизм цел),
+    // а `keep` защищает тех, кем жертвовать нельзя.
+    takeVillager(keep = null) {
+      const pool = [];
+      for (let i = 0; i < this.villagers.length; i++) {
+        const v = this.villagers[i];
+        if (v.hp <= 0) continue;
+        if (keep && keep(v)) continue;
+        pool.push(i);
+      }
+      if (!pool.length) return null;
+      const idx = pool[this.rng.int(0, pool.length - 1)];
+      return this.villagers.splice(idx, 1)[0];
     }
     // ---------- Исследования ----------
     techCost(t) {
@@ -19385,10 +19407,9 @@ h4.group {
       this.res.gold = Math.max(0, this.res.gold - upkeep * ARMY_UPKEEP.gold);
       if (this.res.food <= 0) {
         this.res.food = 0;
-        const victim = this.villagers[this.villagers.length - 1];
+        const victim = this.takeVillager((v) => v.age >= 1600 && v.age < 6e3) || this.takeVillager();
         if (victim) {
           this.addLog(`☠ ${victim.name} умер от голода. Запасайте еду!`, "bad");
-          this.villagers.pop();
           this.starvedDay = this.day;
         }
       }
@@ -19410,16 +19431,13 @@ h4.group {
         }
       }
       const happy = this.happiness();
-      if (happy > 40 && this.res.food > pop * 3 && pop < this.housingCap()) {
-        let chance = 0.1;
-        if (happy > 70) chance *= 1.5;
-        if (this.hasBuilding("hospital")) chance *= 1.3;
-        if (this.hasBuilding("biolab")) chance *= 1.2;
-        if (this.rng.chance(chance)) {
-          const c = this.buildings.find((b) => b.id === "campfire" && !b.destroyed) || { x: this.world.startX, y: this.world.startY };
-          this.spawnVillager(c.x + this.rng.range(-1, 1), c.y + this.rng.range(-1, 1));
-          this.addLog("Родился новый житель!", "good");
-        }
+      const capNow = this.housingCap();
+      const housingFull = pop > 0 && pop >= capNow;
+      if (housingFull && !this._housingFullShown) {
+        this._housingFullShown = true;
+        this.addChronicle(`Все места в домах заняты (${pop}/${capNow}) — детей больше не заводят и пришлых не берут. Нужно жильё: Хижина, дальше Каменный дом.`);
+      } else if (!housingFull && this._housingFullShown) {
+        this._housingFullShown = false;
       }
       const foodRoofBlocked = happy > 40 && pop < this.housingCap() && foodWasAtRoof && pop * 3 >= this.resCap.food;
       if (foodRoofBlocked && !this._foodRoofShown) {
@@ -19430,25 +19448,34 @@ h4.group {
       }
       if (happy < 35) {
         this.unhappyDays++;
-        if (this.unhappyDays >= 3 && pop > 2 && this.rng.chance(0.25)) {
-          const v = this.villagers.pop();
-          this.addLog(`${v.name} покинул поселение от безысходности.`, "bad");
+        const exodusFloor = Math.max(3, Math.round(this.housingCap() * 0.25));
+        if (this.unhappyDays >= 3 && pop > exodusFloor && this.rng.chance(0.25)) {
+          const v = this.takeVillager((x) => x.age < 1600 || x.partner) || this.takeVillager((x) => x.age < 1600);
+          if (v) this.addLog(`${v.name} покинул поселение от безысходности.`, "bad");
+        } else if (this.unhappyDays >= 3 && pop <= exodusFloor && !this._exodusFloorShown) {
+          this._exodusFloorShown = true;
+          this.addChronicle(`Ушли все, кому было куда идти; оставшиеся ${pop} держатся за свои дома. Пока счастье ниже 40, пришлых не будет, а детей рождается вдвое меньше — нужны еда, кров и мир с соседями.`);
         }
-      } else this.unhappyDays = 0;
+      } else {
+        this.unhappyDays = 0;
+        this._exodusFloorShown = false;
+      }
       if (this._happyBonus) {
         this._happyBonus += this._happyBonus > 0 ? -1 : 1;
         if (Math.abs(this._happyBonus) < 1) this._happyBonus = 0;
       }
       systemsNewDay(this);
-      for (const v of this.villagers) {
-        v.age++;
-        let life = 11e3;
-        if (this.techs.has("medicine")) life *= 1.15;
-        if (this.hasBuilding("hospital")) life *= 1.3;
-        if (this.hasBuilding("biolab")) life *= 1.25;
-        if (v.age > life && this.rng.chance(0.02)) {
-          v.hp = 0;
-          this.addLog(`${v.name} умер от старости (${Math.floor(v.age / 100)} лет).`);
+      if (!this.pop) {
+        for (const v of this.villagers) {
+          v.age++;
+          let life = 11e3;
+          if (this.techs.has("medicine")) life *= 1.15;
+          if (this.hasBuilding("hospital")) life *= 1.3;
+          if (this.hasBuilding("biolab")) life *= 1.25;
+          if (v.age > life && this.rng.chance(0.02)) {
+            v.hp = 0;
+            this.addLog(`${v.name} умер от старости (${Math.floor(v.age / 100)} лет).`);
+          }
         }
       }
       this.villagers = this.villagers.filter((v) => v.hp > 0);
@@ -19527,7 +19554,8 @@ h4.group {
       } else if (fx.pop < 0) {
         const n = Math.min(this.villagers.length - 1, -fx.pop);
         for (let i = 0; i < n; i++) {
-          const v = this.villagers.pop();
+          const v = this.takeVillager((x) => x.age < 1600) || this.takeVillager();
+          if (!v) break;
           this.addLog(`☠ ${v.name} погиб при подавлении бунта.`, "bad");
         }
       }
@@ -19544,7 +19572,11 @@ h4.group {
         const med = this.medicineMult();
         let deaths = Math.min(this.villagers.length - 1, Math.round(fx.plague * med));
         for (let i = 0; i < deaths; i++) {
-          const v = this.villagers.pop();
+          const v = this.takeVillager();
+          if (!v) {
+            deaths = i;
+            break;
+          }
           this.addLog(`☠ ${v.name} погиб от болезни.`, "bad");
         }
         this.addLog(deaths ? `Болезнь унесла ${deaths} жителей.` : "Болезнь обошлась без жертв — спасибо медицине.", deaths ? "bad" : "good");
@@ -19607,9 +19639,14 @@ h4.group {
         const stolenGold = Math.round(this.res.gold * 0.2);
         this.res.food -= stolenFood;
         this.res.gold -= stolenGold;
-        const victims = Math.min(this.villagers.length - 1, this.rng.int(1, 3));
+        const victims = Math.min(
+          this.villagers.length - 1,
+          this.rng.int(1, 3),
+          Math.max(1, Math.round(this.villagers.length * 0.25))
+        );
         for (let i = 0; i < victims; i++) {
-          const v = this.villagers.pop();
+          const v = this.takeVillager();
+          if (!v) break;
           this.addLog(`☠ ${v.name} погиб в рейде.`, "bad");
         }
         const candidates = this.doneBuildings().filter((b) => b.id !== "campfire" && b.id !== "spire");
@@ -21012,7 +21049,7 @@ ${s}`, "console");
     const W = world.w, H = world.h;
     const tiles = world.tiles;
     const field = buildField(world, height);
-    const CAP = 30;
+    const CAP2 = 30;
     const cand = {};
     for (const kind of KIND_LIST) cand[kind] = [];
     const sx0 = world.startX != null ? world.startX : W / 2;
@@ -21028,7 +21065,7 @@ ${s}`, "console");
           const s = SCORE[kind](field, x, y, i);
           if (s <= 0) continue;
           const j = 0.75 + 0.5 * h3(x * 7 + k, y * 11 + k, seed ^ 20973);
-          pushTop(cand[kind], x, y, s * j, CAP);
+          pushTop(cand[kind], x, y, s * j, CAP2);
         }
       }
     }
@@ -26044,8 +26081,62 @@ ${s}`, "console");
     return slot.view;
   }
 
+  // app/src/render/snow_roof.js
+  var CAP = /* @__PURE__ */ new Map();
+  var CAP_MAX = 32;
+  function rim(sil, d, col) {
+    const W = sil.width, H = sil.height;
+    const cv = document.createElement("canvas");
+    cv.width = W;
+    cv.height = H;
+    const c = cv.getContext("2d");
+    c.drawImage(sil, 0, 0);
+    c.globalCompositeOperation = "destination-out";
+    c.drawImage(sil, 0, d);
+    c.globalCompositeOperation = "source-in";
+    c.fillStyle = col;
+    c.fillRect(0, 0, W, H);
+    return cv;
+  }
+  function snowRim(spr, key) {
+    if (!spr || !spr.sil) return null;
+    if (typeof document === "undefined" || !document.createElement) return null;
+    const hit = CAP.get(key);
+    if (hit !== void 0) return hit;
+    let out = null;
+    try {
+      const W = spr.sil.width | 0, H = spr.sil.height | 0;
+      if (W > 0 && H > 0) {
+        const cv = document.createElement("canvas");
+        cv.width = W;
+        cv.height = H;
+        const c = cv.getContext("2d");
+        c.drawImage(rim(spr.sil, Math.max(2, Math.round(H * 0.085)), "rgba(228,238,244,0.72)"), 0, 0);
+        c.drawImage(rim(spr.sil, Math.max(1, Math.round(H * 0.032)), "rgba(252,254,255,0.95)"), 0, 0);
+        out = cv;
+      }
+    } catch {
+      out = null;
+    }
+    if (CAP.size >= CAP_MAX) CAP.delete(CAP.keys().next().value);
+    CAP.set(key, out);
+    return out;
+  }
+
   // app/src/render/faction_town.js
-  function spriteHouse(ctx, cache, id, era, hx, footY, wPx) {
+  function flipAround(ctx, cx, on, fn) {
+    if (!on || typeof ctx.save !== "function" || typeof ctx.scale !== "function" || typeof ctx.translate !== "function" || typeof ctx.restore !== "function") {
+      fn();
+      return;
+    }
+    ctx.save();
+    ctx.translate(cx, 0);
+    ctx.scale(-1, 1);
+    ctx.translate(-cx, 0);
+    fn();
+    ctx.restore();
+  }
+  function spriteHouse(ctx, cache, id, era, hx, footY, wPx, flip, night, snow) {
     if (!cache) return false;
     let spr = null;
     try {
@@ -26055,19 +26146,59 @@ ${s}`, "console");
     }
     if (!spr || !spr.cv) return false;
     const h = wPx * (spr.cv.height / spr.cv.width);
-    ctx.drawImage(spr.cv, Math.round(hx - wPx / 2), Math.round(footY - h), Math.round(wPx), Math.round(h));
+    const dx = Math.round(hx - wPx / 2), dy = Math.round(footY - h);
+    const dw = Math.round(wPx), dh = Math.round(h);
+    flipAround(ctx, hx, flip, () => {
+      ctx.drawImage(spr.cv, dx, dy, dw, dh);
+      if (snow) {
+        const rim2 = snowRim(spr, `${id}|${era}|${spr.cv.width}`);
+        if (rim2) {
+          const pa = ctx.globalAlpha;
+          ctx.globalAlpha = pa * 0.88;
+          ctx.drawImage(rim2, dx, dy, dw, dh);
+          ctx.globalAlpha = pa;
+        }
+      }
+      if (night > 0 && spr.glow) {
+        const pm = ctx.globalCompositeOperation, pa = ctx.globalAlpha;
+        ctx.globalCompositeOperation = "lighter";
+        ctx.globalAlpha = pa * night;
+        ctx.drawImage(spr.glow, dx, dy, dw, dh);
+        ctx.globalCompositeOperation = pm || "source-over";
+        ctx.globalAlpha = pa;
+      }
+    });
     return true;
   }
   var TOWN_IDS = {
-    1: ["hut", "lumber", "story_fire"],
-    2: ["hut", "story_fire", "lumber", "hut", "farm"],
-    3: ["stone_house", "smithy", "market", "stone_house", "hut", "stone_house"],
-    4: ["castle", "stone_house", "market", "stone_house", "smithy", "stone_house"]
+    1: ["hut", "hut", "lumber", "story_fire", "forager", "hunter_lodge"],
+    2: ["hut", "hut", "story_fire", "lumber", "farm", "granary", "pasture", "woodshed"],
+    3: ["stone_house", "stone_house", "hut", "smithy", "market", "granary", "workshop", "mill"],
+    4: ["stone_house", "stone_house", "market", "smithy", "barracks", "guild_hall", "mill", "granary"]
   };
+  var TOWN_HEAD = { 4: ["castle"] };
+  function streetIds(tier, n, dice) {
+    const pool = (TOWN_IDS[tier] || TOWN_IDS[1]).slice();
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = dice(200 + i) * (i + 1) | 0;
+      const tmp = pool[i];
+      pool[i] = pool[j];
+      pool[j] = tmp;
+    }
+    const out = (TOWN_HEAD[tier] || []).slice();
+    for (let i = 0; out.length < n; i++) out.push(pool[i % pool.length]);
+    return out;
+  }
+  function siteDice(bx, by, seed) {
+    const sa = bx * 16 + 7 + (seed & 32767) * 131;
+    const sb = by * 8 + 3 + (seed >>> 15 & 32767) * 61;
+    return (k) => hash2(sa + k * 131, sb + k * 61);
+  }
   var WOOD_WALL = ["#9c7a48", "#8a6a3e"];
   var WOOD_ROOF = ["#6b4f35", "#5d442c"];
   var STONE_WALL = ["#b1aa9a", "#a29a89"];
   var TILE_ROOF = ["#a0522d", "#8a4326"];
+  var SNOW_ROOF = ["#eef4f8", "#dde6ee"];
   var WALL_STROKE = "#6f6a60";
   var DARK = "#3a2f22";
   var RUIN_WALL = "#33302c";
@@ -26113,6 +26244,9 @@ ${s}`, "console");
     c.closePath();
     c.fillStyle = color;
     c.fill();
+    c.strokeStyle = "rgba(28,22,18,0.75)";
+    c.lineWidth = 1.4;
+    c.stroke();
     if (war) {
       c.strokeStyle = "#c0392b";
       c.lineWidth = 2.5;
@@ -26200,7 +26334,7 @@ ${s}`, "console");
       ctx.fillRect(wx - ww / 2, wy - ww * 0.8, ww, ww * 1.6);
     }
   }
-  function tower(ctx, tx, footY, w, hb, night, winA, r1) {
+  function tower(ctx, tx, footY, w, hb, night, winA, r1, winter) {
     contactShadow(ctx, tx, footY + 1, w * 0.8, Math.max(1.5, w * 0.3));
     ctx.fillStyle = "#9a948a";
     ctx.fillRect(tx - w / 2, footY - hb, w, hb);
@@ -26209,7 +26343,7 @@ ${s}`, "console");
     ctx.lineTo(tx, footY - hb - hb * 0.42);
     ctx.lineTo(tx + w * 0.75, footY - hb);
     ctx.closePath();
-    ctx.fillStyle = "#6d4a3a";
+    ctx.fillStyle = winter ? "#d3dce4" : "#6d4a3a";
     ctx.fill();
     if (night > 0) {
       const ww = Math.max(1.5, w * 0.3);
@@ -26242,6 +26376,37 @@ ${s}`, "console");
       ctx.beginPath();
       ctx.arc(hx + w * 0.2 + sway, py, pr, 0, TAU);
       ctx.fill();
+    }
+  }
+  function warSpears(ctx, cx, footY, z, dice, color) {
+    const n = 6;
+    ctx.lineWidth = Math.max(1.2, z * 0.04);
+    for (let i = 0; i < n; i++) {
+      const px = cx + (i - (n - 1) / 2) * z * 0.23 + (dice(150 + i) - 0.5) * z * 0.08;
+      const hh = z * (0.62 + dice(160 + i) * 0.26);
+      const lean = (dice(170 + i) - 0.5) * z * 0.2;
+      const tipX = px + lean, tipY = footY - hh;
+      ctx.strokeStyle = "#3a2a1c";
+      ctx.beginPath();
+      ctx.moveTo(px, footY);
+      ctx.lineTo(tipX, tipY);
+      ctx.stroke();
+      ctx.fillStyle = "#e2ddd2";
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY - z * 0.13);
+      ctx.lineTo(tipX - z * 0.04, tipY);
+      ctx.lineTo(tipX + z * 0.04, tipY);
+      ctx.closePath();
+      ctx.fill();
+      if (i % 2 === 1) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(tipX, tipY + z * 0.03);
+        ctx.lineTo(tipX + z * 0.19, tipY + z * 0.1);
+        ctx.lineTo(tipX, tipY + z * 0.17);
+        ctx.closePath();
+        ctx.fill();
+      }
     }
   }
   function well(ctx, wx, footY, z) {
@@ -26313,11 +26478,11 @@ ${s}`, "console");
     ]
   };
   SCENES[4] = [
-    { dx: -1.3, dy: -0.55, kind: "t" },
+    { dx: -1.3, dy: -0.55, w: 0.46, kind: "t" },
     { dx: -0.72, dy: -0.4, w: 0.58 },
     { dx: -0.05, dy: -0.52, w: 0.66 },
     { dx: 0.62, dy: -0.36, w: 0.6 },
-    { dx: 1.3, dy: -0.5, kind: "t" },
+    { dx: 1.3, dy: -0.5, w: 0.46, kind: "t" },
     { dx: -1.05, dy: 0.02, w: 0.54 },
     { dx: -0.28, dy: 0.16, w: 0.62 },
     { dx: 0.45, dy: -0.02, w: 0.58 },
@@ -26341,6 +26506,7 @@ ${s}`, "console");
     const time = typeof opts.time === "number" ? opts.time : 0;
     const cache = opts.sprites || null;
     const era = Math.max(0, Math.min(9, sim2.eraIndex | 0));
+    const winter = (sim2.seasonIdx | 0) === 3;
     const ax = sx + z * 0.5;
     const gy = sy + z;
     const canBake = typeof document !== "undefined" && !!document.createElement;
@@ -26355,19 +26521,23 @@ ${s}`, "console");
       return;
     }
     const bx = s.x | 0, by = s.y | 0;
-    const rnd = (k) => hash2(bx * 16 + k * 131 + 7, by * 8 + k * 61 + 3);
+    const wseed = sim2.world && sim2.world.seed | 0 || 0;
+    const rnd = siteDice(bx, by, wseed);
+    const mir = rnd(101) < 0.5 ? -1 : 1;
+    const spread = 0.9 + rnd(103) * 0.22;
+    const depth = 0.86 + rnd(105) * 0.3;
     if (tier === 0) {
-      ctx.fillStyle = "rgba(110,95,72,0.25)";
+      ctx.fillStyle = winter ? "rgba(226,234,240,0.34)" : "rgba(110,95,72,0.25)";
       ctx.beginPath();
       ctx.ellipse(ax, gy - z * 0.05, z * 0.85, z * 0.3, 0, 0, TAU);
       ctx.fill();
     } else if (tier < 4) {
-      ctx.fillStyle = "rgba(122,102,72,0.18)";
+      ctx.fillStyle = winter ? "rgba(222,232,238,0.32)" : "rgba(122,102,72,0.18)";
       ctx.beginPath();
       ctx.ellipse(ax, gy - z * 0.12, z * 1.3, z * 0.44, 0, 0, TAU);
       ctx.fill();
     } else {
-      ctx.fillStyle = "rgba(196,186,166,0.3)";
+      ctx.fillStyle = winter ? "rgba(232,240,246,0.42)" : "rgba(196,186,166,0.3)";
       ctx.fillRect(ax - z * 0.55, gy - z * 0.28, z * 1.1, z * 0.5);
     }
     const q = [];
@@ -26410,28 +26580,47 @@ ${s}`, "console");
       const winCounts = new Array(nB).fill(0);
       for (let i = 0; i < winN; i++) winCounts[i % nB]++;
       const ruinIdx = damaged ? 1 % nB : -1;
+      const houseIdx = [];
+      for (let i = 0; i < nB; i++) if (live[i].kind !== "t") houseIdx.push(i);
+      const ids = streetIds(tier, houseIdx.length, rnd);
+      const head2 = (TOWN_HEAD[tier] || [])[0] || "";
+      let big = houseIdx.length ? houseIdx[0] : -1;
+      for (const i of houseIdx) if ((live[i].w || 0) > (live[big].w || 0)) big = i;
+      const slotIds = new Array(nB).fill("");
+      const tail = head2 ? ids.slice(1) : ids;
+      let k = 0;
+      for (const i of houseIdx) {
+        if (head2 && i === big) {
+          slotIds[i] = head2;
+          continue;
+        }
+        slotIds[i] = tail.length ? tail[k++ % tail.length] : head2 || "hut";
+      }
       for (let i = 0; i < nB; i++) {
         const sl = live[i];
-        const r0 = rnd(i * 4 + 1), r1 = rnd(i * 4 + 2), r23 = rnd(i * 4 + 3);
-        const hx = ax + (sl.dx + (r0 - 0.5) * 0.14) * z;
-        const footY = gy + sl.dy * z;
-        const w = sl.w * z;
-        const hb = (sl.barn ? 0.3 : 0.34 + r1 * 0.1) * z;
+        const r0 = rnd(i * 6 + 1), r1 = rnd(i * 6 + 2), r23 = rnd(i * 6 + 3);
+        const r34 = rnd(i * 6 + 4), r4 = rnd(i * 6 + 5);
+        const dxv = Math.max(-1.3, Math.min(1.3, sl.dx * mir * spread + (r0 - 0.5) * 0.2));
+        const hx = ax + dxv * z;
+        const footY = gy + sl.dy * z * depth;
+        const sc = 0.87 + r34 * 0.27;
+        const w = sl.w * z * sc;
+        const hb = (sl.barn ? 0.3 : 0.34 + r1 * 0.1) * z * (0.92 + r34 * 0.16);
         const rh = w * 0.52;
+        const flip = r4 < 0.5;
         const stone = tier >= 3;
         const wall = stone ? STONE_WALL[i % 2] : WOOD_WALL[(i + (r0 * 2 | 0)) % 2];
-        const roof = stone ? TILE_ROOF[i % 2] : WOOD_ROOF[(i + 1) % 2];
+        const roof = winter ? SNOW_ROOF[i % 2] : stone ? TILE_ROOF[i % 2] : WOOD_ROOF[(i + 1) % 2];
         const wc = winCounts[i];
         const isRuin = i === ruinIdx;
+        const id = slotIds[i];
         q.push({
           y: footY,
           fn: () => {
             if (isRuin) ruin(ctx, hx, footY, w, hb + rh * 0.5, time, rnd);
-            else if (sl.kind === "t") tower(ctx, hx, footY, w * 0.55, hb + rh * 0.9, night, winA, r1);
+            else if (sl.kind === "t") tower(ctx, hx, footY, w * 0.44, hb + rh * 0.9, night, winA, r1, winter);
             else {
-              const ids = TOWN_IDS[tier] || TOWN_IDS[1];
-              const id = ids[i % ids.length];
-              if (!spriteHouse(ctx, cache, id, era, hx, footY, w * 1.25)) {
+              if (!spriteHouse(ctx, cache, id, era, hx, footY, w * 1.25, flip, night, winter)) {
                 house(ctx, hx, footY, w, hb, rh, wall, roof, stone, wc > 0 ? night : 0, winA, r1, r23);
               }
             }
@@ -26481,6 +26670,9 @@ ${s}`, "console");
           }
         });
       }
+    }
+    if (atWar2) {
+      q.push({ y: gy + z * 0.4, fn: () => warSpears(ctx, ax - z * 0.15, gy + z * 0.3, z, rnd, f.def.color) });
     }
     const img = bannerImg();
     q.push({
@@ -35085,6 +35277,15 @@ ${s}`, "console");
       const dx = sx - size * 0.08, dy = sy + size - dh;
       this.shadows.building(ctx, spr, dx, dy, dw, dh);
       ctx.drawImage(spr.cv, dx, dy, dw, dh);
+      if ((sim2.seasonIdx | 0) === 3) {
+        const rim2 = snowRim(spr, `${b.id}|${e}|${spr.cv.width}`);
+        if (rim2) {
+          const pa = ctx.globalAlpha;
+          ctx.globalAlpha = pa * 0.88;
+          ctx.drawImage(rim2, dx, dy, dw, dh);
+          ctx.globalAlpha = pa;
+        }
+      }
       this.shadows.selfShade(ctx, spr, dx, dy, dw, dh);
       this._pendingGlow.push({ spr, dx, dy, dw, dh });
       this.cityLights.note(b, dx, dy, dw, dh, e);

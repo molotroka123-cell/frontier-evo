@@ -448,15 +448,47 @@ export class Simulation {
   consumeGreat(type) { const g = this.greatPeople.find(g => g.type === type && !g.used); if (g) g.used = true; }
 
   // ---------- Население ----------
-  spawnVillager(x, y) {
+  spawnVillager(x, y, age0 = null) {
     // Прежний генератор клеил к имени огрызок в две буквы — выходило «Цвета ви»
     // и «Шана с». Берём настоящие прозвища: читается как имя человека, а не как
     // мусор в строке.
     const name = this.rng.pick(NAMES) + ' ' + this.rng.pick(NICKNAMES);
+    // БЫЛО: age = rng.int(1800, 9000) — 18–90 лет. Окно материнства в модуле
+    // населения 18–42 года, значит две трети новых жителей появлялись уже за
+    // ним: медианный возраст «новорождённого» был 52 года, 91% таких людей
+    // исчезали в первые 500 дней, а модуль за 12000 дней насчитывал ноль
+    // рождений — поселение было не деревней, а домом престарелых с текучкой.
+    // На фронтир (и в основатели, и в переселенцы) идут молодые: 16–34.
+    // Диапазон, а не одно число, чтобы поколение не вымирало разом.
+    // Бросок делаем всегда, даже когда возраст задан снаружи: иначе поток rng
+    // зависел бы от того, каким числом аргументов позвали метод, и партия
+    // расходилась бы от одной лишней обёртки над spawnVillager.
+    const roll = this.rng.int(1600, 3400);
+    const age = age0 == null ? roll : age0;
     this.villagers.push({
-      name, x, y, tx: x, ty: y, age: this.rng.int(1800, 9000),
+      name, x, y, tx: x, ty: y, age,
       job: 'idle', target: null, path: null, busy: 0, hp: 100, home: null,
     });
+    return this.villagers[this.villagers.length - 1];
+  }
+
+  // Кого забирает беда (голод, мор, рейд) или безысходность (эмиграция).
+  // БЫЛО: villagers.pop() во всех четырёх местах — то есть всегда ПОСЛЕДНИЙ
+  // добавленный, а последний добавленный — это всегда новорождённый или
+  // только что пришедший. Поселение физически не могло накопить людей: любая
+  // потеря съедала именно прибыль. Здесь жребий кидает rng (детерминизм цел),
+  // а `keep` защищает тех, кем жертвовать нельзя.
+  takeVillager(keep = null) {
+    const pool = [];
+    for (let i = 0; i < this.villagers.length; i++) {
+      const v = this.villagers[i];
+      if (v.hp <= 0) continue;
+      if (keep && keep(v)) continue;
+      pool.push(i);
+    }
+    if (!pool.length) return null;
+    const idx = pool[this.rng.int(0, pool.length - 1)];
+    return this.villagers.splice(idx, 1)[0];
   }
 
   // ---------- Исследования ----------
@@ -987,10 +1019,12 @@ export class Simulation {
     // голод
     if (this.res.food <= 0) {
       this.res.food = 0;
-      const victim = this.villagers[this.villagers.length - 1];
+      // Голод забирает слабейшего — старика или ребёнка, а не «последнего в
+      // массиве» (то есть не всегда только что родившегося; см. takeVillager).
+      const victim = this.takeVillager(v => v.age >= 1600 && v.age < 6000)
+        || this.takeVillager();
       if (victim) {
         this.addLog(`☠ ${victim.name} умер от голода. Запасайте еду!`, 'bad');
-        this.villagers.pop();
         // День, когда голод УБИЛ. Связь выживания считает голодные сутки по
         // запасу на складе, а склад за ночь успевает подрасти на пару мешков и
         // формально выйти из голода — при том, что людей уже хоронят. Без этой
@@ -1019,23 +1053,27 @@ export class Simulation {
         if (gold > 0) this.addLog(`Караван прибыл: +${gold.toFixed(1)}🪙.`);
       }
     }
-    // рождения
     const happy = this.happiness();
-    // БЫЛО: порог рождений happy > 45 при фактической рабочей зоне счастья
-    // 28–41 (перенаселение −20 + снег/рейды) — рост стоял до эпохи 2, пока
-    // не приходил акведук; осторожный бот не построил 47 зданий из 58, потому
-    // что партия схлопывалась раньше. 40 открывает медленный рост в полосе
-    // 40–45 и оставляет 35–40 «терпимой» без роста.
-    if (happy > 40 && this.res.food > pop * 3 && pop < this.housingCap()) {
-      let chance = 0.1;
-      if (happy > 70) chance *= 1.5;
-      if (this.hasBuilding('hospital')) chance *= 1.3;
-      if (this.hasBuilding('biolab')) chance *= 1.2;
-      if (this.rng.chance(chance)) {
-        const c = this.buildings.find(b => b.id === 'campfire' && !b.destroyed) || { x: this.world.startX, y: this.world.startY };
-        this.spawnVillager(c.x + this.rng.range(-1, 1), c.y + this.rng.range(-1, 1));
-        this.addLog('Родился новый житель!', 'good');
-      }
+    // Рождения и смерти считает модуль населения (systems/population.js через
+    // wire_population.js): там пары, окно материнства, возрастная смертность.
+    // ЗДЕСЬ БЫЛ ВТОРОЙ, ПРИМИТИВНЫЙ ПУТЬ: «счастье > 40 → spawnVillager». Он
+    // и держал рост на нуле. Спавн выдавал человека 18–90 лет (медиана 52), то
+    // есть за окном материнства, и таких «новорождённых» приходило по 250–500
+    // за партию — при НУЛЕ настоящих рождений у модуля. Поселение обновляло
+    // состав стариками и хоронило их: 91% исчезали за первые 500 дней.
+    // Приток извне остался — он теперь один и живёт в wire_population.js
+    // (_tickMigration), где переселенцу 17–32 года.
+    //
+    // Потолок роста — жильё, и о нём надо сказать словами: молчаливая стена
+    // читается как поломка. Говорим один раз за эпизод, снимаем — когда место
+    // появилось.
+    const capNow = this.housingCap();
+    const housingFull = pop > 0 && pop >= capNow;
+    if (housingFull && !this._housingFullShown) {
+      this._housingFullShown = true;
+      this.addChronicle(`Все места в домах заняты (${pop}/${capNow}) — детей больше не заводят и пришлых не берут. Нужно жильё: Хижина, дальше Каменный дом.`);
+    } else if (!housingFull && this._housingFullShown) {
+      this._housingFullShown = false;
     }
     // Амбары под крышу, а трёхдневного запаса на нового жителя всё равно не
     // набрать: рост останавливается сам, и это надо называть словами — иначе
@@ -1052,11 +1090,26 @@ export class Simulation {
     // эмиграция при несчастье
     if (happy < 35) {
       this.unhappyDays++;
-      if (this.unhappyDays >= 3 && pop > 2 && this.rng.chance(0.25)) {
-        const v = this.villagers.pop();
-        this.addLog(`${v.name} покинул поселение от безысходности.`, 'bad');
+      // Потолок исхода. Уходят те, кому есть куда идти; корень поселения
+      // остаётся при своих домах. БЫЛО дно `pop > 2`: эмиграция работала
+      // одноходовым храповиком и за партию вымывала деревню до двух душ (замер
+      // на сиде 99: 235 уходов за 12000 дней), а из двух душ уже ничто не
+      // вырастало — это и была «нет роста» в чистом виде. Четверть жилья, но
+      // не меньше трёх: дома пустыми не бросают.
+      const exodusFloor = Math.max(3, Math.round(this.housingCap() * 0.25));
+      if (this.unhappyDays >= 3 && pop > exodusFloor && this.rng.chance(0.25)) {
+        // Уходит взрослый и одинокий: дети сами не уходят, а семьи держатся
+        // друг за друга. Если таких нет — уходит кто угодно, кроме детей.
+        const v = this.takeVillager(x => (x.age < 1600) || x.partner)
+          || this.takeVillager(x => x.age < 1600);
+        if (v) this.addLog(`${v.name} покинул поселение от безысходности.`, 'bad');
+      } else if (this.unhappyDays >= 3 && pop <= exodusFloor && !this._exodusFloorShown) {
+        // Дно исхода надо назвать словами: иначе игрок видит только, что люди
+        // перестали уходить, и не понимает, что делать дальше.
+        this._exodusFloorShown = true;
+        this.addChronicle(`Ушли все, кому было куда идти; оставшиеся ${pop} держатся за свои дома. Пока счастье ниже 40, пришлых не будет, а детей рождается вдвое меньше — нужны еда, кров и мир с соседями.`);
       }
-    } else this.unhappyDays = 0;
+    } else { this.unhappyDays = 0; this._exodusFloorShown = false; }
     // Разовые эффекты событий затухают к нулю по 1 в день: иначе «Праздник»
     // остался бы вечным бонусом, а авария на АЭС — вечным штрафом.
     if (this._happyBonus) {
@@ -1066,16 +1119,24 @@ export class Simulation {
     // Подсистемы — до общего сбора мёртвых: зима помечает замёрзших hp=0,
     // и их убирает тот же фильтр, что и умерших от старости.
     systemsNewDay(this);
-    // старение и смерть
-    for (const v of this.villagers) {
-      v.age++;
-      let life = 11000; // дней
-      if (this.techs.has('medicine')) life *= 1.15;
-      if (this.hasBuilding('hospital')) life *= 1.3;
-      if (this.hasBuilding('biolab')) life *= 1.25;
-      if (v.age > life && this.rng.chance(0.02)) {
-        v.hp = 0;
-        this.addLog(`${v.name} умер от старости (${Math.floor(v.age / 100)} лет).`);
+    // Старение и смерть. Когда подключён модуль населения, возраст двигает он
+    // (wire_population.js, внутри systemsNewDay), и смертность считает он же —
+    // по возрастной кривой. Этот блок оставался включённым И ПОСЛЕ подключения
+    // модуля: жители старели ДВА дня за день (замерено: +200 единиц возраста за
+    // 100 дней), то есть жили вдвое меньше и проскакивали окно материнства
+    // 18–42 за половину срока. Плюс поверх кривой работала вторая смерть по
+    // таймеру 11000. Блок остаётся страховкой для сборок без подсистем.
+    if (!this.pop) {
+      for (const v of this.villagers) {
+        v.age++;
+        let life = 11000; // дней
+        if (this.techs.has('medicine')) life *= 1.15;
+        if (this.hasBuilding('hospital')) life *= 1.3;
+        if (this.hasBuilding('biolab')) life *= 1.25;
+        if (v.age > life && this.rng.chance(0.02)) {
+          v.hp = 0;
+          this.addLog(`${v.name} умер от старости (${Math.floor(v.age / 100)} лет).`);
+        }
       }
     }
     this.villagers = this.villagers.filter(v => v.hp > 0);
@@ -1164,7 +1225,9 @@ export class Simulation {
       // «Подавить» в событии «Бунт» был пустышкой.
       const n = Math.min(this.villagers.length - 1, -fx.pop);
       for (let i = 0; i < n; i++) {
-        const v = this.villagers.pop();
+        // На площадь выходят взрослые — под саблю попадают они, не младенцы.
+        const v = this.takeVillager(x => x.age < 1600) || this.takeVillager();
+        if (!v) break;
         this.addLog(`☠ ${v.name} погиб при подавлении бунта.`, 'bad');
       }
     }
@@ -1181,7 +1244,8 @@ export class Simulation {
       const med = this.medicineMult();
       let deaths = Math.min(this.villagers.length - 1, Math.round(fx.plague * med));
       for (let i = 0; i < deaths; i++) {
-        const v = this.villagers.pop();
+        const v = this.takeVillager();
+        if (!v) { deaths = i; break; }
         this.addLog(`☠ ${v.name} погиб от болезни.`, 'bad');
       }
       this.addLog(deaths ? `Болезнь унесла ${deaths} жителей.` : 'Болезнь обошлась без жертв — спасибо медицине.', deaths ? 'bad' : 'good');
@@ -1246,8 +1310,22 @@ export class Simulation {
       const stolenFood = Math.round(this.res.food * 0.2);
       const stolenGold = Math.round(this.res.gold * 0.2);
       this.res.food -= stolenFood; this.res.gold -= stolenGold;
-      const victims = Math.min(this.villagers.length - 1, this.rng.int(1, 3));
-      for (let i = 0; i < victims; i++) { const v = this.villagers.pop(); this.addLog(`☠ ${v.name} погиб в рейде.`, 'bad'); }
+      // Рейдеры приходят за добром: они уносят пятую часть склада, и людской
+      // урон должен быть той же меры. БЫЛО «1–3 убитых» без оглядки на размер
+      // поселения: деревня из четверых теряла за один налёт троих — три
+      // четверти жителей, и после этого уже не поднималась. Замерено на сиде 11
+      // (эпоха 3, постоянные набеги): 463 убитых за партию при населении 3–6,
+      // то есть деревня двенадцать раз вырезалась заново. Потолок — четверть
+      // поселения, но не меньше одного: налёт всегда стоит крови.
+      const victims = Math.min(this.villagers.length - 1, this.rng.int(1, 3),
+        Math.max(1, Math.round(this.villagers.length * 0.25)));
+      for (let i = 0; i < victims; i++) {
+        // Под стрелу попадает кто попало, но не всегда самый младший житель
+        // в массиве — рейд не обязан выкашивать именно приплод.
+        const v = this.takeVillager();
+        if (!v) break;
+        this.addLog(`☠ ${v.name} погиб в рейде.`, 'bad');
+      }
       const candidates = this.doneBuildings().filter(b => b.id !== 'campfire' && b.id !== 'spire');
       if (candidates.length) {
         const b = this.rng.pick(candidates);
