@@ -21,6 +21,10 @@ import { SelectLayer } from './select.js';
 import { IconLayer } from './icons.js';
 import { CityLights } from './city_lights.js';
 import { MinimapLayer } from './minimap.js';
+// Атмосфера и вода: дым труб/пыль марша/искры и блики/пена/течение —
+// оба слоя сами гаснут на eco и за пределами камеры.
+import { AtmosphereFX } from './atmosphere.js';
+import { WaterFx } from './water_fx.js';
 import { lightAt, hash2, TERRAIN } from './palette.js';
 // Отряды на карте: читаем только чистые функции army.js (без DOM, без rng).
 import { squadAlive, squadPower } from '../core/systems/army.js';
@@ -29,6 +33,10 @@ import { settlementView } from '../core/systems/settlement_view.js';
 // 3D-камера: чистая математика проекции (стадия 1). Старая this.cam не тронута —
 // минимапа/coach/main читают её поля.
 import { makeCam } from './projection3d.js';
+// Фототекстуры земли (данные льёт сборка через window.__FRONTIER_TEX__) и
+// камера-наблюдатель: нет данных/режима — вызовы честно ничего не делают.
+import { texPattern } from './textures.js';
+import { followStore, followApplyCam } from './follow_cam.js';
 
 const TILE_PX = 32; // мировая единица «тайл→экран» при zoom=1 — НЕ зависит от пресета графики
 
@@ -91,6 +99,8 @@ export class Renderer {
     this.icons = new IconLayer(this.quality);          // значки состояния
     this.cityLights = new CityLights(this.quality);    // окна и фонари ночью
     this.minimap = new MinimapLayer(this.quality);     // выпеченная миникарта + тревоги
+    this.atmoFx = new AtmosphereFX(this.quality);      // дым труб, пыль марша, искры, флаги
+    this.waterFx = new WaterFx(this.quality);          // блики, пена кромки, течение
   }
 
   // id ∈ QUALITY_ORDER или 'auto'
@@ -146,6 +156,9 @@ export class Renderer {
   draw(sim, dtReal) {
     this.time += dtReal;
     this.tuneAuto(dtReal);
+    // Камера-наблюдатель: плавно ведёт this.cam за жителем/правителем,
+    // пока игрок не выйдет из режима (Esc/клик/WASD).
+    followApplyCam(followStore(), sim, dtReal, this.cam);
 
     const ctx = this.ctx;
     const dpr = this.dpr;
@@ -180,6 +193,32 @@ export class Renderer {
     // включаем только на верхних пресетах, а ниже оставляем прежнюю заливку.
     if (this.quality.richWater) this.water.draw(sim, ctx, ox, oy, z, cw, ch, dtReal, L);
     else if (this.quality.water) this.terrain.drawWater(ctx, sim, ox, oy, z, cw, ch, this.time);
+    // Фотопаттерн поверх заливки земли: только ultra. ЗАМЕР НА SwiftShader:
+    // сетка pattern-fillRect на high роняла кадр с 61 до 12–19 FPS — софтовый
+    // растеризатор дорого рисует повторяющуюся текстуру. На настоящем GPU
+    // цену стоит перемерить и, если она копеечная, вернуть на high.
+    if (!sim.view3d && this.quality.id === 'ultra') {
+      const texSeed = (sim.world && sim.world.seed) | 0;
+      const tx0 = Math.max(0, Math.floor(-ox / z)), ty0 = Math.max(0, Math.floor(-oy / z));
+      const tx1 = Math.min(sim.world.w - 1, Math.ceil((cw - ox) / z));
+      const ty1 = Math.min(sim.world.h - 1, Math.ceil((ch - oy) / z));
+      const step = z >= 24 ? 2 : 3; // крупный зум — плотная сетка, общий вид — реже
+      const LAND_TEX = { [TILE.SAND]: 'sand', [TILE.GRASS]: 'grass', [TILE.FOREST]: 'forest_floor', [TILE.HILL]: 'hill_rock', [TILE.MOUNTAIN]: 'hill_rock' };
+      for (let ty = ty0; ty <= ty1; ty += step) {
+        for (let tx = tx0; tx <= tx1; tx += step) {
+          const tt = tileAt(sim.world, tx, ty);
+          const role = (tt === TILE.DEEP || tt === TILE.WATER) ? 'water' : (LAND_TEX[tt] || 'grass');
+          texPattern(ctx, role, ox + tx * z, oy + ty * z, z * step, z * step,
+            role === 'water' ? 0.22 : 0.3, { seed: texSeed, ax: ox, ay: oy });
+        }
+      }
+    }
+    // Блики/пена/течение поверх воды: слой сам молчит на eco и зимой.
+    // Гейт high/ultra: на SwiftShader слой стоил ~12 FPS на пустой сцене —
+    // средний пресет за фактуру воды не платит. На GPU перемерить.
+    if (this.quality.id === 'high' || this.quality.id === 'ultra') {
+      this.waterFx.draw(sim, ctx, ox, oy, z, cw, ch, dtReal, L, this.quality);
+    }
     this.atmo.update(sim, dtReal, ox, oy, z, cw, ch);
     this.fx.update(sim, dtReal, ox, oy, z, cw, ch);
     this.veg.update(sim, dtReal, ox, oy, z, cw, ch, { wind: this.atmo.wind, roads: this.terrain.road && this.terrain.road.tiles });
@@ -247,6 +286,12 @@ export class Renderer {
     this.drawArmies(sim, ctx, ox, oy, z, cw, ch, lod);
     this.select.drawGround(sim, ctx, ox, oy, z, cw, ch, dtReal);
     this.fx.drawWorld(ctx, ox, oy, z, cw, ch);
+    // Дым труб, пыль марша, ночные искры, колыхание крон/флагов: после
+    // зданий/жителей и ДО ночного тона — гаснут вместе со сценой.
+    // Гейт high/ultra по той же причине, что и у воды (замер SwiftShader).
+    if (this.quality.id === 'high' || this.quality.id === 'ultra') {
+      this.atmoFx.frame(sim, ctx, ox, oy, z, cw, ch, dtReal, L, this.quality);
+    }
 
     // --- призрак стройки ---
     if (sim.placing) {
@@ -1290,3 +1335,37 @@ export class Renderer {
   }
 
 }
+
+/* ═══════════ ПОДКЛЮЧЕНИЕ атмосферы (app/src/render/atmosphere.js) ═══════════
+ * Три правки, каждая — по якорю с РОВНО ОДНИМ совпадением в этом файле
+ * (проверено подсчётом совпадений на момент написания блока).
+ *
+ * ПРАВКА 1 — импорт.
+ *   ЯКОРЬ (совпадений: 1):
+ *     import { MinimapLayer } from './minimap.js';
+ *   ВСТАВИТЬ СРАЗУ ПОСЛЕ:
+ *     import { AtmosphereFX } from './atmosphere.js';
+ *
+ * ПРАВКА 2 — конструктор Renderer.
+ *   ЯКОРЬ (совпадений: 1):
+ *     this.minimap = new MinimapLayer(this.quality);     // выпеченная миникарта + тревоги
+ *   ВСТАВИТЬ СРАЗУ ПОСЛЕ:
+ *     this.atmoFx = new AtmosphereFX(this.quality);      // дым труб, пыль марша, искры, флаги
+ *
+ * ПРАВКА 3 — метод draw().
+ *   ЯКОРЬ (совпадений: 1):
+ *     this.fx.drawWorld(ctx, ox, oy, z, cw, ch);
+ *   ВСТАВИТЬ СРАЗУ ПОСЛЕ:
+ *     this.atmoFx.frame(sim, ctx, ox, oy, z, cw, ch, dtReal, L, this.quality);
+ *   Почему здесь. После зданий/жителей/эффектов и ДО ночного тона
+ *   (this.atmo.drawTone): дым и пыль живут в мире и гаснут вместе со сценой,
+ *   а внутренние множители dayL/night самого слоя поднимают искры именно
+ *   ночью. Пресет приходит параметром каждый кадр, поэтому отдельных вызовов
+ *   setQuality для atmoFx не требуется — авто-тюнер подхватывается сам.
+ *
+ * Подпитка точек огня по мере появления факелов чужих городов и пожаров:
+ *   renderer.atmoFx.addFire(wx, wy, intensity 0..1) → id; .removeFire(id);
+ *   .clearFires(). Потолок реестра ATMO_LIMITS.fires = 20, вытеснение FIFO.
+ * Тесты слоя: node app/tests/test-atmosphere.mjs (без канваса, чистые функции).
+ * ═════════════════════════════════════════════════════════════════════════ */
+

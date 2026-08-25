@@ -89,6 +89,25 @@ function embedArt() {
 }
 const artTag = embedArt();
 
+// --- ПОДКЛЮЧЕНИЕ (G2 «ТЕКСТУРЫ-HF»): фототекстуры земли ---------------------
+// art/tex/*.jpg печётся в window.__FRONTIER_TEX__ тем же путём, что спрайты
+// выше: frontier.html обязан работать по file:// без соседних файлов. Пустая
+// папка — не ошибка: render/textures.js молча живёт без паттернов.
+function embedTex() {
+  const dir = join(ROOT, 'art', 'tex');
+  let files = [];
+  try { files = readdirSync(dir); } catch { return ''; }
+  const jpgs = files.filter(f => /\.jpg$/i.test(f)).sort();
+  if (!jpgs.length) return '';
+  const map = {};
+  for (const f of jpgs) {
+    map[f.replace(/\.jpg$/i, '')] = `data:image/jpeg;base64,${readFileSync(join(dir, f)).toString('base64')}`;
+  }
+  console.log(`  текстуры земли вшиты: ${jpgs.length} шт.`);
+  return `<script>window.__FRONTIER_TEX__=${JSON.stringify(map)};</script>\n`;
+}
+const texTag = embedTex();
+
 const html = readFileSync(HTML_IN, 'utf8');
 if (!html.includes(MARKER)) {
   console.error('ОШИБКА: в app/index.html не найдена строка подключения модуля:', MARKER);
@@ -135,7 +154,7 @@ try {
   mskTag = `<style id="msk-inline">\n${safeCss}\n</style>\n`;
 } catch { /* файла скина нет — играем без него, как и в dev-режиме */ }
 
-writeFileSync(OUT, themed.replace(MARKER, `${artTag}${mskTag}<script>\n${safeJs}\n</script>`), 'utf8');
+writeFileSync(OUT, themed.replace(MARKER, `${artTag}${texTag}${mskTag}<script>\n${safeJs}\n</script>`), 'utf8');
 
 const kb = (statSync(OUT).size / 1024).toFixed(0);
 console.log(`frontier.html собран: ${kb} КБ (bundle ${(js.length / 1024).toFixed(0)} КБ) · нарисованных спрайтов: ${artCount} · скин меню: ${mskTag ? 'инлайн' : 'нет файла'}`);

@@ -20,15 +20,7 @@ import { AVAILABLE } from './artpack_list.js';
 // Оставшиеся 19 построек (campfire, quarry, story_fire, склады, shipyard,
 // sewers, lab, apartment, airport, npp, robo_factory, biolab, skyscraper,
 // ai_core и др.) рисуются процедурно — дописать id сюда, когда появится арт.
-export const MANIFEST = [
-  'academy', 'amphitheater', 'aqueduct', 'armory', 'bank', 'barracks',
-  'castle', 'clinic', 'datacenter', 'factory', 'farm', 'forager',
-  'foundry', 'granary', 'guild_hall', 'hospital', 'hunter_lodge', 'hut',
-  'lumber', 'market', 'media_tower', 'mill', 'mine', 'observatory',
-  'palisade', 'pasture', 'port', 'power_plant', 'press', 'smithy',
-  'solar', 'spaceport', 'spire', 'stock_exchange', 'stone_walls', 'temple',
-  'treasury', 'university', 'workshop',
-];
+export const MANIFEST = ['academy', 'ai_core', 'airport', 'amphitheater', 'apartment', 'aqueduct', 'armory', 'bank', 'barracks', 'biolab', 'campfire', 'castle', 'clinic', 'datacenter', 'depot', 'factory', 'farm', 'forager', 'foundry', 'fusion_reactor', 'granary', 'guild_hall', 'hospital', 'hunter_lodge', 'hut', 'lab', 'lumber', 'market', 'media_tower', 'mill', 'mine', 'npp', 'observatory', 'palisade', 'pasture', 'port', 'power_plant', 'press', 'quarry', 'robo_factory', 'sewers', 'shipyard', 'skyscraper', 'smithy', 'solar', 'spaceport', 'spire', 'stock_exchange', 'stone_house', 'stone_walls', 'stoneyard', 'story_fire', 'temple', 'train_station', 'treasury', 'university', 'woodshed', 'workshop'];
 
 const BASE = 'assets/sprites/';
 

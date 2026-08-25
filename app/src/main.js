@@ -9,6 +9,8 @@ import { BrowserSave } from './save/saveSystem.js';
 import { AudioEngine } from './ui/audio.js';
 import { ASSET_COVER, ASSET_VICTORY, ASSET_MUSIC } from './ui/assets.js';
 import { tileAt } from './core/world.js';
+// Камера-наблюдатель: [ / ] — следить за жителем (правитель первым), Esc — выйти.
+import { followStore, followCycle, followBreak, followClickBreak } from './render/follow_cam.js';
 // Командный док и верхняя полоса ресурсов W3: сами ставят свой DOM и CSS.
 import './ui/dock.js';
 import './ui/topbar.js';
@@ -17,6 +19,9 @@ import './ui/building_drawer.js';
 // Карточка-инспектор W20: сама подписывается на клики канваса и читает
 // window.__frontier — порядок инициализации не важен (см. заголовок модуля).
 import './ui/inspector.js';
+// Биография жителя G6: сама ставит DOM/CSS, слушает клики канваса,
+// читает window.__frontier / window.__frontierFollow.
+import './ui/villager_story.js';
 
 const canvas = document.getElementById('game');
 const saveSys = new BrowserSave();
@@ -218,7 +223,8 @@ const pointers = new Map();
 let dragging = false, dragMoved = false, lastPinch = 0, panVel = { x: 0, y: 0 }, downPos = null, downTime = 0, longPressTimer = null;
 
 canvas.addEventListener('pointerdown', e => {
-  audio.unlock();
+    audio.unlock();
+    followClickBreak(followStore());
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 1) {
@@ -350,6 +356,7 @@ document.addEventListener('keydown', e => {
   if (e.key === '3' || e.key === '4') hud.setSpeed(8);
   if (e.key === 'Escape') {
     if (sim.placing) cancelPlace();
+    else if (followBreak(followStore())) { /* вышли из наблюдателя; меню не открываем */ }
     else if (document.getElementById('modalWrap').classList.contains('show')) hud.closeModal();
     else hud.showMenu();
   }
@@ -357,6 +364,10 @@ document.addEventListener('keydown', e => {
   if (e.key === 'b' || e.key === 'B') hud.setTab('build');
   if (e.key === 'r' || e.key === 'R') hud.setTab('research');
   if (e.key === 't' || e.key === 'T') hud.setTab('army');
+  // Наблюдатель: [ — предыдущий, ] — следующий (правитель всегда первым).
+  // 'х'/'ъ' — те же клавиши в русской раскладке.
+  if (e.key === '[' || e.key === 'х' || e.key === 'Х') followCycle(followStore(), sim, -1);
+  if (e.key === ']' || e.key === 'ъ' || e.key === 'Ъ') followCycle(followStore(), sim, +1);
   if (e.key === '+' || e.key === '=') zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1.15);
   if (e.key === '-') zoomAt(window.innerWidth / 2, window.innerHeight / 2, 0.87);
 });
