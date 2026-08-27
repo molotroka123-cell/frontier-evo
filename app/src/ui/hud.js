@@ -20,7 +20,7 @@ import { renderDynastyPanel } from '../core/systems/link_dynasty.js';
 // её таблица эмодзи уже протестирована на полноту (test-building-drawer),
 // дублировать её здесь значит получить две расходящиеся истины.
 import { iconOf } from './building_drawer.js';
-import { setTileSpriteCache } from './tile_sprites.js';
+import { setTileSpriteCache, tileSpriteUrl } from './tile_sprites.js';
 
 // Ядро не хранит скоростей добычи: производство размазано по жителям, погоде и
 // разовым событиям дня, а еда вообще списывается одним куском на смене суток.
@@ -196,6 +196,9 @@ const GNS_CSS = `
   border: 1px solid #000;
   box-shadow: inset 1px 1px 0 #39412f, inset -1px -1px 0 #050603;
 }
+.gns-row .gns-bimg { width: 22px; height: 22px; object-fit: contain;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.6)); }
+.gns-row.disabled .gns-bimg { filter: grayscale(0.55) brightness(0.8); }
 .gns-row .gns-mid { flex: 1; min-width: 0; }
 .gns-row .desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .gns-row .cost { flex: none; margin-left: auto; max-width: 46%; text-align: right; white-space: normal; }
@@ -1057,7 +1060,8 @@ export class Hud {
       // в середине, цена моноширинным столбиком справа. Классы .ttl/.desc/
       // .reason сохранены — на них завязаны подсказки (data-tipk) и тосты.
       html += `<div class="card gns-row ${dis ? 'disabled' : ''}" data-tipk="b:${id}" ${!locked && !built ? `data-build="${id}"` : ''}>
-        <span class="gns-bic" aria-hidden="true">${iconOf(id)}</span>
+        <span class="gns-bic" aria-hidden="true">${(() => { const u = tileSpriteUrl(id);
+          return u ? `<img class="gns-bimg" src="${u}" alt="">` : iconOf(id); })()}</span>
         <div class="gns-mid">
           <div class="ttl"><span>${def.name}</span></div>
           <div class="desc">${def.desc}</div>
