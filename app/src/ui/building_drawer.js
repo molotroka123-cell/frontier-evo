@@ -38,6 +38,7 @@
 // производственные здания, потерь не бывает.
 
 import { RES, ERAS, TECHS, BUILDINGS } from '../core/data.js';
+import { tileSpriteUrl } from './tile_sprites.js';
 
 // ===== ЧИСТАЯ ЧАСТЬ (без DOM; ниже маркер DOM-части — тесты сканируют её) =====
 
@@ -231,6 +232,8 @@ export function cardModel(id, def, ctx) {
     id,
     name: def.name,
     icon: iconOf(id),
+    // Data-URL нарисованного спрайта для плитки, либо null → эмодзи-фолбэк.
+    spriteUrl: tileSpriteUrl(id),
     eraRu: (ERAS[eraIdx] || {}).ru || '',
     price: priceBadges(def.cost, c.costMult),
     out: effectLines(def),
@@ -260,7 +263,9 @@ export function tileHtml(m, selected) {
   const cls = 'ft-tile' + (m.disabled ? ' ft-tile-off' : '') + (selected ? ' ft-tile-sel' : '');
   return `<button type="button" class="${cls}"${m.clickable ? ` data-ft-build="${m.id}"` : ''}`
     + ` data-ft-id="${m.id}" aria-label="${m.name}">`
-    + `<span class="ft-tile-ic" aria-hidden="true">${m.icon}</span>`
+    + (m.spriteUrl
+      ? `<img class="ft-tile-img" src="${m.spriteUrl}" alt="" aria-hidden="true">`
+      : `<span class="ft-tile-ic" aria-hidden="true">${m.icon}</span>`)
     + `<span class="ft-tile-cost" aria-hidden="true">${tileCostStr(m.price)}</span></button>`;
 }
 
@@ -467,6 +472,9 @@ function ensureCss() {
 /* Недоступно: затемнение + красный уголок-треугольник сверху справа. */
 .ft-tile-off { opacity: 0.42; filter: saturate(0.35); }
 .ft-tile-off .ft-tile-ic { filter: grayscale(0.5); }
+.ft-tile-img { width: 40px; height: 40px; object-fit: contain; image-rendering: auto;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.55)); pointer-events: none; }
+.ft-tile-off .ft-tile-img { filter: grayscale(0.55) brightness(0.8); }
 .ft-tile-off::after {
   content: ''; position: absolute; top: 0; right: 0;
   border-top: 13px solid #a83a2a; border-left: 13px solid transparent;

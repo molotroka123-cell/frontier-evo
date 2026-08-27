@@ -36161,6 +36161,36 @@ ${s}`, "console");
     }).join(" ") || "—";
   }
 
+  // app/src/ui/tile_sprites.js
+  var CACHE = /* @__PURE__ */ new Map();
+  var CACHEREF = null;
+  function setTileSpriteCache(spriteCache) {
+    CACHEREF = spriteCache || null;
+    CACHE.clear();
+  }
+  function tileSpriteUrl(id) {
+    if (!CACHEREF) return null;
+    if (CACHE.has(id)) return CACHE.get(id);
+    const def = BUILDINGS[id];
+    if (!def) {
+      CACHE.set(id, null);
+      return null;
+    }
+    let url = null;
+    try {
+      const era = BUILDING_ERA_IDX[id] | 0;
+      const spr = CACHEREF.building(id, def, era, 1);
+      if (spr && spr.cv && typeof spr.cv.toDataURL === "function") {
+        const u = spr.cv.toDataURL("image/png");
+        if (typeof u === "string" && u.startsWith("data:image") && u.length > 64) url = u;
+      }
+    } catch {
+      url = null;
+    }
+    CACHE.set(id, url);
+    return url;
+  }
+
   // app/src/ui/building_drawer.js
   var CATEGORIES = [
     { key: "home", ru: "Жильё и Быт" },
@@ -36407,6 +36437,8 @@ ${s}`, "console");
       id,
       name: def.name,
       icon: iconOf(id),
+      // Data-URL нарисованного спрайта для плитки, либо null → эмодзи-фолбэк.
+      spriteUrl: tileSpriteUrl(id),
       eraRu: (ERAS[eraIdx] || {}).ru || "",
       price: priceBadges(def.cost, c.costMult),
       out: effectLines(def),
@@ -36424,7 +36456,7 @@ ${s}`, "console");
   }
   function tileHtml(m, selected) {
     const cls = "ft-tile" + (m.disabled ? " ft-tile-off" : "") + (selected ? " ft-tile-sel" : "");
-    return `<button type="button" class="${cls}"${m.clickable ? ` data-ft-build="${m.id}"` : ""} data-ft-id="${m.id}" aria-label="${m.name}"><span class="ft-tile-ic" aria-hidden="true">${m.icon}</span><span class="ft-tile-cost" aria-hidden="true">${tileCostStr(m.price)}</span></button>`;
+    return `<button type="button" class="${cls}"${m.clickable ? ` data-ft-build="${m.id}"` : ""} data-ft-id="${m.id}" aria-label="${m.name}">` + (m.spriteUrl ? `<img class="ft-tile-img" src="${m.spriteUrl}" alt="" aria-hidden="true">` : `<span class="ft-tile-ic" aria-hidden="true">${m.icon}</span>`) + `<span class="ft-tile-cost" aria-hidden="true">${tileCostStr(m.price)}</span></button>`;
   }
   function tilesHtml(ids, ctx, placingId) {
     return (ids || []).map((id) => {
@@ -36581,6 +36613,9 @@ ${s}`, "console");
 /* Недоступно: затемнение + красный уголок-треугольник сверху справа. */
 .ft-tile-off { opacity: 0.42; filter: saturate(0.35); }
 .ft-tile-off .ft-tile-ic { filter: grayscale(0.5); }
+.ft-tile-img { width: 40px; height: 40px; object-fit: contain; image-rendering: auto;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.55)); pointer-events: none; }
+.ft-tile-off .ft-tile-img { filter: grayscale(0.55) brightness(0.8); }
 .ft-tile-off::after {
   content: ''; position: absolute; top: 0; right: 0;
   border-top: 13px solid #a83a2a; border-left: 13px solid transparent;
@@ -37116,6 +37151,7 @@ ${s}`, "console");
     constructor(sim2, renderer2, saveSys2, audio2) {
       this.sim = sim2;
       this.r = renderer2;
+      if (renderer2 && renderer2.sprites) setTileSpriteCache(renderer2.sprites);
       this.saveSys = saveSys2;
       this.audio = audio2;
       this.tab = "build";

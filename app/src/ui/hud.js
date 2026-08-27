@@ -20,6 +20,7 @@ import { renderDynastyPanel } from '../core/systems/link_dynasty.js';
 // её таблица эмодзи уже протестирована на полноту (test-building-drawer),
 // дублировать её здесь значит получить две расходящиеся истины.
 import { iconOf } from './building_drawer.js';
+import { setTileSpriteCache } from './tile_sprites.js';
 
 // Ядро не хранит скоростей добычи: производство размазано по жителям, погоде и
 // разовым событиям дня, а еда вообще списывается одним куском на смене суток.
@@ -289,6 +290,10 @@ export class Hud {
   constructor(sim, renderer, saveSys, audio) {
     this.sim = sim;
     this.r = renderer;
+    // Плитки построек рисуются настоящими спрайтами, а не эмодзи: отдаём
+    // панели тот же SpriteCache, которым рисуется мир. В headless (тесты)
+    // провайдер не регистрируется — там остаётся эмодзи-фолбэк.
+    if (renderer && renderer.sprites) setTileSpriteCache(renderer.sprites);
     this.saveSys = saveSys;
     this.audio = audio;
     this.tab = 'build';
